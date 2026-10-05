@@ -66,9 +66,10 @@ function topoLoad(): array {
  */
 function topoStatuses(array $nodes): array {
 	$host_sev = [];
-	$res = DBselect('SELECT f.hostid, MAX(p.severity) AS sev, COUNT(*) AS cnt'.
-			' FROM problems p JOIN functions f ON f.triggerid = p.objectid'.
-			' WHERE p.r_eventid IS NULL GROUP BY f.hostid');
+	$res = DBselect('SELECT i.hostid, MAX(p.severity) AS sev, COUNT(*) AS cnt'.
+			' FROM problem p JOIN functions f ON f.triggerid = p.objectid'.
+			' JOIN items i ON i.itemid = f.itemid'.
+			' WHERE p.r_eventid IS NULL GROUP BY i.hostid');
 
 	while ($row = DBfetch($res)) {
 		$host_sev[(int) $row['hostid']] = ['sev' => (int) $row['sev'], 'cnt' => (int) $row['cnt']];
@@ -143,8 +144,11 @@ if ($ajax) {
 			$reply(false, 'ชื่อกลุ่มต้องมี 1-64 ตัวอักษร');
 		}
 
-		DBexecute('INSERT INTO topo_node (type, name, posx, posy) VALUES (\'group\', '.zbx_dbstr($name).', '
-			.max(0, (int) getRequest('x', 60)).', '.max(0, (int) getRequest('y', 60)).')');
+		if (!DBexecute('INSERT INTO topo_node (type, name, posx, posy) VALUES (\'group\', '.zbx_dbstr($name).', '
+			.max(0, (int) getRequest('x', 60)).', '.max(0, (int) getRequest('y', 60)).')')) {
+			$reply(false, 'เขียนฐานข้อมูลไม่สำเร็จ (ตรวจสิทธิ์ของ user DB)');
+		}
+
 		$reply(true, 'เพิ่มกลุ่มแล้ว');
 	}
 
@@ -171,9 +175,12 @@ if ($ajax) {
 			}
 		}
 
-		DBexecute('INSERT INTO topo_node (type, name, parentid, hostid, posx, posy) VALUES (\'device\', '
+		if (!DBexecute('INSERT INTO topo_node (type, name, parentid, hostid, posx, posy) VALUES (\'device\', '
 			.zbx_dbstr($name).', '.($groupid > 0 ? $groupid : 'NULL').', '.($hostid > 0 ? $hostid : 'NULL').', '
-			.max(0, (int) getRequest('x', 120)).', '.max(0, (int) getRequest('y', 120)).')');
+			.max(0, (int) getRequest('x', 120)).', '.max(0, (int) getRequest('y', 120)).')')) {
+			$reply(false, 'เขียนฐานข้อมูลไม่สำเร็จ (ตรวจสิทธิ์ของ user DB)');
+		}
+
 		$reply(true, 'เพิ่มอุปกรณ์แล้ว');
 	}
 
@@ -193,7 +200,7 @@ if ($ajax) {
 		}
 
 		if (!DBexecute('INSERT INTO topo_link (nodeida, nodeidb) VALUES ('.$a.', '.$b.')')) {
-			$reply(false, 'เส้นเชื่อมนี้มีอยู่แล้ว');
+			$reply(false, 'เส้นเชื่อมนี้มีอยู่แล้วหรือเขียนฐานข้อมูลไม่สำเร็จ');
 		}
 
 		$reply(true, 'เพิ่มเส้นเชื่อมแล้ว');
