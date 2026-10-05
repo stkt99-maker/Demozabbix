@@ -272,6 +272,7 @@ header('Content-Type: text/html; charset=UTF-8');
 	<link rel="stylesheet" type="text/css" href="assets/styles/modern-theme.css">
 	<style>
 		:root {
+			color-scheme: dark;
 			--bg: #0a1120;
 			--surface: #101a2e;
 			--surface-2: #16233c;
@@ -330,14 +331,18 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .panel.is-open { display: flex; }
 		.topo .panel label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; }
 		.topo .panel input, .topo .panel select { font-family: inherit; font-size: 13.5px; padding: 8px 11px;
-			border: 1px solid #2a3d5e; border-radius: 8px; min-width: 210px; background: #0c1526;
-			color: var(--text); }
-		.topo .panel select option { background: #101a2e; color: var(--text); }
+			border: 1px solid #2a3d5e; border-radius: 8px; min-width: 210px; background-color: #0c1526;
+			color: var(--text); height: auto; line-height: 1.5; }
+		/* global theme forces select height 24px + white bg — reset fully and draw our own arrow */
+		.topo .panel select { appearance: none; -webkit-appearance: none; padding-right: 30px;
+			background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238296b3' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+			background-repeat: no-repeat; background-position: right 11px center; }
+		.topo .panel select option { background-color: #101a2e; color: var(--text); }
 
 		/* ---- map area ---- */
 		.topo .map-area { flex: 1; position: relative; min-height: 0; }
 		.topo .viewport { position: absolute; inset: 0; overflow: auto; }
-		.topo .canvas { position: relative; background-image:
+		.topo .canvas { position: relative; min-width: 100%; min-height: 100%; background-image:
 			radial-gradient(1100px 640px at 46% 38%, rgba(63, 162, 255, .06), transparent 62%),
 			radial-gradient(#1b2a45 1px, transparent 1.3px);
 			background-size: auto, 26px 26px; }
