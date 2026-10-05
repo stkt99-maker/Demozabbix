@@ -441,6 +441,7 @@ class CRouter {
 		'report4.php'					=> [CLegacyAction::class, null, null],
 		'sysmap.php'					=> [CLegacyAction::class, null, null],
 		'sysmaps.php'					=> [CLegacyAction::class, null, null],
+		'topo_tree.php'					=> [CLegacyAction::class, null, null],
 		'tr_events.php'					=> [CLegacyAction::class, null, null]
 	];
 

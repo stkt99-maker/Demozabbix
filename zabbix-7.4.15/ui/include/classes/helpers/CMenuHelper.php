@@ -159,6 +159,24 @@ class CMenuHelper {
 			);
 		}
 
+		// Custom hybrid topology page; future topology views can join this submenu.
+		$submenu_topology = [
+			!CWebUser::isGuest()
+				? (new CMenuItem(_('แผนผังเครือข่าย (Hybrid)')))
+					->setUrl(new CUrl('topo_tree.php'), 'topo_tree.php')
+				: null
+		];
+		$submenu_topology = array_filter($submenu_topology);
+
+		if ($submenu_topology) {
+			$menu->add(
+				(new CMenuItem(_('Topology')))
+					->setId('topology')
+					->setIcon(ZBX_ICON_TREE_TOP_BOTTOM)
+					->setSubMenu(new CMenu($submenu_topology))
+			);
+		}
+
 		$submenu_data_collection = [
 			CWebUser::checkAccess(CRoleHelper::UI_CONFIGURATION_TEMPLATE_GROUPS)
 				? (new CMenuItem(_('Template groups')))->setAction('templategroup.list')
