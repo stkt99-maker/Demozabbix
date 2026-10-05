@@ -105,6 +105,80 @@ function topoStatuses(array $nodes): array {
 	return $status;
 }
 
+/**
+ * Interface traffic (bps) per host, from the latest history values of
+ * net.if.in / net.if.out items. Loopback excluded. items has no lastvalue
+ * column in 7.4 — the newest history row per item is taken instead.
+ */
+function topoTraffic(array $nodes): array {
+	$hostids = [];
+
+	foreach ($nodes as $node) {
+		if ($node['type'] === 'device' && $node['hostid'] !== null) {
+			$hostids[$node['hostid']] = true;
+		}
+	}
+
+	if (!$hostids) {
+		return [];
+	}
+
+	$list = implode(',', array_map('intval', array_keys($hostids)));
+	$items = [];
+	$res = DBselect('SELECT itemid, hostid, key_, value_type FROM items WHERE hostid IN ('.$list.')'.
+			' AND status = 0'.
+			' AND (key_ LIKE \'net.if.in[%\' OR key_ LIKE \'net.if.out[%\')');
+
+	while ($row = DBfetch($res)) {
+		if (strpos($row['key_'], '["lo"]') !== false) {
+			continue;
+		}
+
+		$items[(int) $row['itemid']] = [
+			'hostid' => (int) $row['hostid'],
+			'dir'    => strpos($row['key_'], 'net.if.in') === 0 ? 'in' : 'out',
+			'vt'     => (int) $row['value_type']
+		];
+	}
+
+	$by_table = ['history' => [], 'history_uint' => []];
+
+	foreach ($items as $itemid => $item) {
+		$by_table[$item['vt'] === 3 ? 'history_uint' : 'history'][] = $itemid;
+	}
+
+	$values = [];
+
+	foreach ($by_table as $table => $itemids) {
+		if (!$itemids) {
+			continue;
+		}
+
+		$res = DBselect('SELECT DISTINCT ON (itemid) itemid, value FROM '.$table.
+				' WHERE itemid IN ('.implode(',', $itemids).') ORDER BY itemid, clock DESC');
+
+		while ($row = DBfetch($res)) {
+			$values[(int) $row['itemid']] = (float) $row['value'];
+		}
+	}
+
+	$traffic = [];
+
+	foreach ($items as $itemid => $item) {
+		if (!isset($values[$itemid])) {
+			continue;
+		}
+
+		if (!isset($traffic[$item['hostid']])) {
+			$traffic[$item['hostid']] = ['in' => 0.0, 'out' => 0.0];
+		}
+
+		$traffic[$item['hostid']][$item['dir']] += $values[$itemid];
+	}
+
+	return $traffic;
+}
+
 $ajax = (getRequest('ajax') === '1');
 
 // Read-only status feed for the auto-refresh poller.
@@ -113,7 +187,10 @@ if ($ajax && getRequest('mode') === 'status') {
 	session_write_close();
 
 	header('Content-Type: application/json; charset=UTF-8');
-	echo json_encode(['statuses' => topoStatuses($nodes)], JSON_UNESCAPED_UNICODE);
+	echo json_encode([
+		'statuses' => topoStatuses($nodes),
+		'traffic' => topoTraffic($nodes)
+	], JSON_UNESCAPED_UNICODE);
 	exit;
 }
 
@@ -261,6 +338,7 @@ $data = [
 	'nodes' => array_values($nodes),
 	'links' => $links,
 	'statuses' => $statuses,
+	'traffic' => topoTraffic($nodes),
 	'host_names' => $host_names,
 	'is_admin' => $is_admin,
 	'csrf_token' => $csrf_token
@@ -379,7 +457,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .gbox.is-empty .glabel { border-style: dashed; }
 
 		/* ---- nodes ---- */
-		.topo .node { position: absolute; z-index: 3; width: 170px; height: 56px; padding: 8px 10px 8px 12px;
+		.topo .node { position: absolute; z-index: 3; width: 170px; height: 68px; padding: 8px 10px 8px 12px;
 			box-sizing: border-box; border-radius: 10px;
 			background: linear-gradient(180deg, #14203a, #101a2e);
 			border: 1px solid #2a3d5e;
@@ -395,6 +473,8 @@ header('Content-Type: text/html; charset=UTF-8');
 			text-overflow: ellipsis; }
 		.topo .node .n-sub { font-size: 11px; color: var(--text-dim); margin-top: 3px; white-space: nowrap;
 			overflow: hidden; text-overflow: ellipsis; padding-left: 18px; }
+		.topo .node .n-traffic { margin-top: 3px; padding-left: 18px; font-size: 10.5px; color: #6fc3ff;
+			white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		.topo .node .n-badge { margin-left: auto; background: var(--danger); color: #fff; font-size: 10.5px;
 			border-radius: 9px; padding: 1px 7px; flex: 0 0 auto; }
 		.topo .node.is-src { border-color: var(--accent);
@@ -535,7 +615,7 @@ const SEV = [
 	{c: '#E45959', t: 'วิกฤต'}
 ];
 const OK_COLOR = '#38d17e';
-const NODE_W = 170, NODE_H = 56, CHIP_W = 130, CHIP_H = 40;
+const NODE_W = 170, NODE_H = 68, CHIP_W = 130, CHIP_H = 40;
 const MOTION = matchMedia('(prefers-reduced-motion: no-preference)').matches;
 
 const canvas = document.getElementById('canvas');
@@ -543,8 +623,23 @@ const svg = document.getElementById('svg');
 const viewport = document.getElementById('viewport');
 const nodes = new Map(DATA.nodes.map(n => [n.nodeid, n]));
 const statuses = new Map(Object.entries(DATA.statuses).map(([k, v]) => [+k, v]));
+const traffic = new Map(Object.entries(DATA.traffic || {}).map(([k, v]) => [+k, v]));
 
 const sevColor = s => s >= 0 ? SEV[s].c : OK_COLOR;
+
+function fmtBps(v) {
+	if (!isFinite(v) || v <= 0) return '0 bps';
+
+	const units = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
+	let u = 0;
+
+	while (v >= 1000 && u < units.length - 1) {
+		v /= 1000;
+		u++;
+	}
+
+	return v.toFixed(v < 10 && u > 0 ? 1 : 0) + ' ' + units[u];
+}
 
 // HUD legend
 document.getElementById('hud').innerHTML =
@@ -615,7 +710,11 @@ function makeNode(n) {
 		sub.className = 'n-sub mono';
 		const host = n.hostid && DATA.host_names[n.hostid] ? DATA.host_names[n.hostid] : 'ไม่ผูก host';
 		sub.textContent = host;
-		el.append(head, sub);
+
+		const tr = document.createElement('div');
+		tr.className = 'n-traffic mono';
+
+		el.append(head, sub, tr);
 	}
 	else {
 		el.append(head);
@@ -764,6 +863,29 @@ function applyStatuses() {
 }
 
 applyStatuses();
+
+function applyTraffic() {
+	for (const n of nodes.values()) {
+		if (n.type !== 'device') continue;
+
+		const el = nodeEls.get(n.nodeid);
+		const row = el ? el.querySelector('.n-traffic') : null;
+
+		if (!row) continue;
+
+		const t = n.hostid !== null ? traffic.get(n.hostid) : null;
+
+		if (t) {
+			row.style.display = '';
+			row.textContent = '↓ ' + fmtBps(t.in) + '  ↑ ' + fmtBps(t.out);
+		}
+		else {
+			row.style.display = 'none';
+		}
+	}
+}
+
+applyTraffic();
 document.getElementById('live-time').textContent = new Date().toLocaleTimeString('th-TH', {hour12: false});
 
 // ---- drag (admin) ----
@@ -1010,8 +1132,15 @@ setInterval(async () => {
 				statuses.set(+k, v);
 			}
 
+			if (json.traffic) {
+				for (const [k, v] of Object.entries(json.traffic)) {
+					traffic.set(+k, v);
+				}
+			}
+
 			updateGeometry();
 			applyStatuses();
+			applyTraffic();
 			document.getElementById('live-time').textContent =
 				new Date().toLocaleTimeString('th-TH', {hour12: false});
 		}
