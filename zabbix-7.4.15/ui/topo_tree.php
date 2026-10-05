@@ -32,9 +32,11 @@ $is_admin = (CWebUser::$data['type'] == USER_TYPE_SUPER_ADMIN);
  */
 function topoLoad(): array {
 	$nodes = [];
+	// DBfetch($res, false): keep real NULLs — Zabbix's default DBfetch turns NULL into '0',
+	// which would make hostless/ungrouped nodes look like hostid/parentid 0 everywhere below.
 	$res = DBselect('SELECT topo_nodeid AS nodeid, type, name, parentid, hostid, posx, posy FROM topo_node ORDER BY topo_nodeid');
 
-	while ($row = DBfetch($res)) {
+	while ($row = DBfetch($res, false)) {
 		$nodes[(int) $row['nodeid']] = [
 			'nodeid'   => (int) $row['nodeid'],
 			'type'     => $row['type'],
@@ -179,6 +181,138 @@ function topoTraffic(array $nodes): array {
 	return $traffic;
 }
 
+/**
+ * The local Zabbix server's own host (it always has a 127.0.0.1 interface).
+ */
+function topoServerHostid(): ?int {
+	$row = DBfetch(DBselect('SELECT hostid FROM interface WHERE ip = \'127.0.0.1\' LIMIT 1'));
+
+	return $row !== false ? (int) $row['hostid'] : null;
+}
+
+/**
+ * hostid => list of IPv4 addresses configured as Zabbix interfaces.
+ */
+function topoHostIps(array $hostids): array {
+	$ips = [];
+
+	if ($hostids) {
+		$list = implode(',', array_map('intval', array_keys($hostids)));
+		$res = DBselect('SELECT hostid, ip FROM interface WHERE hostid IN ('.$list.')');
+
+		while ($row = DBfetch($res)) {
+			$ips[(int) $row['hostid']][] = $row['ip'];
+		}
+	}
+
+	return $ips;
+}
+
+/**
+ * True when any IPv4 pair shares a /24. IPv6 and unparseable values are ignored.
+ */
+function topoSameSubnet24(array $ips_a, array $ips_b): bool {
+	foreach ($ips_a as $ipa) {
+		$na = ip2long($ipa);
+
+		if ($na === false) {
+			continue;
+		}
+
+		foreach ($ips_b as $ipb) {
+			$nb = ip2long($ipb);
+
+			if ($nb !== false && ($na >> 8) === ($nb >> 8)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Pairs (a < b) that the relationship rules say should be linked:
+ * star around the Zabbix server node, and /24-subnet mesh between devices.
+ */
+function topoAutoLinkPairs(array $nodes, ?int $only_nodeid = null): array {
+	$devices = [];
+	$server_hostid = topoServerHostid();
+	$server_nodeid = null;
+
+	foreach ($nodes as $node) {
+		if ($node['type'] !== 'device' || $node['hostid'] === null) {
+			continue;
+		}
+
+		$devices[$node['nodeid']] = $node;
+
+		if ($server_hostid !== null && $node['hostid'] === $server_hostid) {
+			$server_nodeid = $node['nodeid'];
+		}
+	}
+
+	if (!$devices) {
+		return [];
+	}
+
+	$host_ips = topoHostIps(array_flip(array_map(static function ($n) {
+		return $n['hostid'];
+	}, $devices)));
+
+	$existing = [];
+	$res = DBselect('SELECT nodeida, nodeidb FROM topo_link');
+
+	while ($row = DBfetch($res)) {
+		$a = (int) $row['nodeida'];
+		$b = (int) $row['nodeidb'];
+		$existing[min($a, $b).':'.max($a, $b)] = true;
+	}
+
+	// A hostless new device has nothing to relate on: skip instead of linking the whole map.
+	$targets = $only_nodeid !== null
+		? (isset($devices[$only_nodeid]) ? [$only_nodeid] : [])
+		: array_keys($devices);
+
+	if (!$targets) {
+		return [];
+	}
+
+	$ids = array_keys($devices);
+	$pairs = [];
+
+	foreach ($targets as $t) {
+		if ($server_nodeid !== null && $server_nodeid !== $t) {
+			$key = min($t, $server_nodeid).':'.max($t, $server_nodeid);
+
+			if (!isset($existing[$key])) {
+				$existing[$key] = true;
+				$pairs[] = [min($t, $server_nodeid), max($t, $server_nodeid)];
+			}
+		}
+
+		foreach ($ids as $o) {
+			if ($o === $t) {
+				continue;
+			}
+
+			$key = min($t, $o).':'.max($t, $o);
+
+			if (isset($existing[$key])) {
+				continue;
+			}
+
+			if (topoSameSubnet24($host_ips[$devices[$t]['hostid']] ?? [],
+					$host_ips[$devices[$o]['hostid']] ?? [])) {
+				$existing[$key] = true;
+				$pairs[] = [min($t, $o), max($t, $o)];
+			}
+		}
+	}
+
+	return $pairs;
+}
+
 $ajax = (getRequest('ajax') === '1');
 
 // Read-only status feed for the auto-refresh poller.
@@ -199,8 +333,8 @@ if ($ajax) {
 	session_write_close();
 	header('Content-Type: application/json; charset=UTF-8');
 
-	$reply = static function (bool $ok, string $msg = ''): void {
-		echo json_encode(['ok' => $ok, 'msg' => $msg], JSON_UNESCAPED_UNICODE);
+	$reply = static function (bool $ok, string $msg = '', array $extra = []): void {
+		echo json_encode(['ok' => $ok, 'msg' => $msg] + $extra, JSON_UNESCAPED_UNICODE);
 		exit;
 	};
 
@@ -252,13 +386,25 @@ if ($ajax) {
 			}
 		}
 
-		if (!DBexecute('INSERT INTO topo_node (type, name, parentid, hostid, posx, posy) VALUES (\'device\', '
+		$newid = DBfetch(DBselect('INSERT INTO topo_node (type, name, parentid, hostid, posx, posy) VALUES (\'device\', '
 			.zbx_dbstr($name).', '.($groupid > 0 ? $groupid : 'NULL').', '.($hostid > 0 ? $hostid : 'NULL').', '
-			.max(0, (int) getRequest('x', 120)).', '.max(0, (int) getRequest('y', 120)).')')) {
+			.max(0, (int) getRequest('x', 120)).', '.max(0, (int) getRequest('y', 120)).
+			') RETURNING topo_nodeid'));
+
+		if ($newid === false) {
 			$reply(false, 'เขียนฐานข้อมูลไม่สำเร็จ (ตรวจสิทธิ์ของ user DB)');
 		}
 
-		$reply(true, 'เพิ่มอุปกรณ์แล้ว');
+		// Auto-link the new device by relationship rules (server star + same /24).
+		$added = 0;
+
+		foreach (topoAutoLinkPairs(topoLoad()[0], (int) $newid['topo_nodeid']) as $pair) {
+			if (DBexecute('INSERT INTO topo_link (nodeida, nodeidb) VALUES ('.$pair[0].', '.$pair[1].')')) {
+				$added++;
+			}
+		}
+
+		$reply(true, 'เพิ่มอุปกรณ์แล้ว'.($added > 0 ? ' + เชื่อมอัตโนมัติ '.$added.' เส้น' : ''));
 	}
 
 	if ($mode === 'add_link') {
@@ -281,6 +427,21 @@ if ($ajax) {
 		}
 
 		$reply(true, 'เพิ่มเส้นเชื่อมแล้ว');
+	}
+
+	if ($mode === 'auto_link') {
+		[$nodes_all] = topoLoad();
+		$added = 0;
+
+		foreach (topoAutoLinkPairs($nodes_all) as $pair) {
+			if (DBexecute('INSERT INTO topo_link (nodeida, nodeidb) VALUES ('.$pair[0].', '.$pair[1].')')) {
+				$added++;
+			}
+		}
+
+		$reply(true, $added > 0
+			? 'เชื่อมอัตโนมัติเพิ่ม '.$added.' เส้น (subnet เดียวกัน + รอบ Zabbix server)'
+			: 'ทุกความสัมพันธ์ที่ตรวจพบมีเส้นเชื่อมอยู่แล้ว', ['added' => $added]);
 	}
 
 	if ($mode === 'delete_node') {
@@ -536,6 +697,7 @@ header('Content-Type: text/html; charset=UTF-8');
 <?php if ($is_admin): ?>
 		<button type="button" class="tbtn" id="btn-add-group">+ กลุ่ม</button>
 		<button type="button" class="tbtn" id="btn-add-device">+ อุปกรณ์</button>
+		<button type="button" class="tbtn tbtn-ghost" id="btn-autolink" title="เชื่อมตามความสัมพันธ์: subnet เดียวกัน + ดาวรอบ Zabbix server">เส้นอัตโนมัติ</button>
 		<button type="button" class="tbtn tbtn-ghost" id="btn-link">โหมดเชื่อมเส้น</button>
 		<button type="button" class="tbtn tbtn-ghost is-danger" id="btn-delete">โหมดลบ</button>
 <?php else: ?>
@@ -1053,6 +1215,18 @@ document.getElementById('btn-add-group')?.addEventListener('click', () => openPa
 document.getElementById('btn-add-device')?.addEventListener('click', () => openPanel('panel-device'));
 document.getElementById('btn-cancel-group')?.addEventListener('click', closePanels);
 document.getElementById('btn-cancel-device')?.addEventListener('click', closePanels);
+
+document.getElementById('btn-autolink')?.addEventListener('click', async () => {
+	const r = await post({mode: 'auto_link'});
+
+	if (r) {
+		toast(r.msg);
+
+		if (r.ok && r.added > 0) {
+			setTimeout(() => location.reload(), 600);
+		}
+	}
+});
 
 function viewportCenter() {
 	return {
