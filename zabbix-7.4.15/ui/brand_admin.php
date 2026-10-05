@@ -173,7 +173,9 @@ header('Content-Type: text/html; charset=UTF-8');
 		.brand-admin .file-name.empty { color: #9aa5ad; }
 		.brand-admin .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 		.brand-admin .btn { border: 0; border-radius: 6px; padding: 9px 20px; cursor: pointer;
-			font-size: 14px; font-family: inherit; transition: filter .15s, background-color .15s; }
+			font-size: 14px; font-family: inherit; transition: filter .15s, background-color .15s;
+			height: auto; line-height: 1.5; white-space: nowrap;
+			display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; }
 		.brand-admin .btn:hover { filter: brightness(.92); }
 		.brand-admin .btn:disabled { opacity: .45; cursor: not-allowed; }
 		.brand-admin .btn-save { background: #1e87e3; color: #fff; }
