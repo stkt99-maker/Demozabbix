@@ -1,0 +1,41 @@
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+#ifndef ZABBIX_VERSION_H
+#define ZABBIX_VERSION_H
+
+#define ZBX_STR2(str)	#str
+#define ZBX_STR(str)	ZBX_STR2(str)
+
+#define APPLICATION_NAME	"Zabbix Agent"
+#define ZABBIX_REVDATE		"22 September 2026"
+#define ZABBIX_VERSION_MAJOR	7
+#define ZABBIX_VERSION_MINOR	4
+#define ZABBIX_VERSION_PATCH	15
+#ifndef ZABBIX_VERSION_REVISION
+#	define ZABBIX_VERSION_REVISION	bd350f540cd
+#endif
+#ifdef _WINDOWS
+#	ifndef ZABBIX_VERSION_RC_NUM
+#		define ZABBIX_VERSION_RC_NUM	1400
+#	endif
+#endif
+#define ZABBIX_VERSION_RC	""
+#define ZABBIX_VERSION		ZBX_STR(ZABBIX_VERSION_MAJOR) "." ZBX_STR(ZABBIX_VERSION_MINOR) "." \
+				ZBX_STR(ZABBIX_VERSION_PATCH) ZABBIX_VERSION_RC
+#define ZABBIX_VERSION_SHORT	ZBX_STR(ZABBIX_VERSION_MAJOR) "." ZBX_STR(ZABBIX_VERSION_MINOR) "." \
+				ZBX_STR(ZABBIX_VERSION_PATCH)
+#define ZABBIX_REVISION		ZBX_STR(ZABBIX_VERSION_REVISION)
+
+#endif /* ZABBIX_VERSION_H */

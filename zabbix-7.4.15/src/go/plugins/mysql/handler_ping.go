@@ -1,0 +1,43 @@
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+package mysql
+
+import (
+	"context"
+	"fmt"
+)
+
+const (
+	pingFailed = 0
+	pingOk     = 1
+)
+
+// pingHandler queries 'SELECT 1' and returns pingOk if a connection is alive or pingFailed otherwise.
+func pingHandler(ctx context.Context, conn MyClient, _ map[string]string, _ ...string) (any, error) {
+	var res int
+
+	row, err := conn.QueryRow(ctx, fmt.Sprintf("SELECT %d", pingOk))
+	if err != nil {
+		return pingFailed, nil //nolint:nilerr //No need to return an error by design
+	}
+
+	err = row.Scan(&res)
+
+	if err != nil || res != pingOk {
+		return pingFailed, nil //nolint:nilerr //No need to return an error by design
+	}
+
+	return pingOk, nil
+}

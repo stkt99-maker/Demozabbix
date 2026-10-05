@@ -1,0 +1,28 @@
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+package com.zabbix.gateway;
+
+class GeneralInformation
+{
+	static final String APPLICATION_NAME = "Zabbix Java Gateway";
+	static final String REVISION_DATE = "22 September 2026";
+	static final String REVISION = "bd350f540cd";
+	static final String VERSION = "7.4.15";
+
+	static void printVersion()
+	{
+		System.out.println(String.format("%s v%s (revision %s) (%s)", APPLICATION_NAME, VERSION, REVISION, REVISION_DATE));
+	}
+}

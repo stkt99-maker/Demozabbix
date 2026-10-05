@@ -1,0 +1,115 @@
+//go:build !windows
+
+/*
+** Copyright (C) 2001-2026 Zabbix SIA
+**
+** This program is free software: you can redistribute it and/or modify it under the terms of
+** the GNU Affero General Public License as published by the Free Software Foundation, version 3.
+**
+** This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+** without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+** See the GNU Affero General Public License for more details.
+**
+** You should have received a copy of the GNU Affero General Public License along with this program.
+** If not, see <https://www.gnu.org/licenses/>.
+**/
+
+package zbxcmd
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"os/exec"
+	"strings"
+	"syscall"
+	"time"
+
+	"golang.zabbix.com/sdk/errs"
+	"golang.zabbix.com/sdk/log"
+)
+
+// ZBXExec holds wrapper for os.exec.
+//
+//nolint:ireturn
+type ZBXExec struct {
+}
+
+// InitExecutor initialized empty ZBXExec will allow support of different shells in the future.
+//
+//nolint:ireturn
+func InitExecutor() (Executor, error) {
+	return &ZBXExec{}, nil
+}
+
+func (*ZBXExec) execute(s string, timeout time.Duration, path string, strict bool) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	//nolint:gosec,noctx // intended behavior, might require refactoring for CommandContext.
+	cmd := exec.Command("sh", "-c", s)
+	cmd.Dir = path
+
+	var b bytes.Buffer
+	cmd.Stdout = &b
+	cmd.Stderr = &b
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	err := cmd.Start()
+	if err != nil {
+		return "", errs.Errorf("cannot execute command: %s", err)
+	}
+
+	done := make(chan error, 1)
+
+	go jobDoneListener(done, cmd)
+	go timeoutListener(ctx, cmd)
+
+	err = <-done
+
+	// we need to check context error so we can inform the user if timeout was reached and Zabbix agent2
+	// terminated the command
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "", errs.Errorf("command execution failed: %s", ctx.Err())
+	}
+
+	// we need to check error after t.Stop so we can inform the user if timeout was reached and Zabbix agent2 terminated the command
+	if strict && err != nil && !errors.Is(err, syscall.ECHILD) {
+		log.Debugf("command [%s] execution failed: %s\n%s", s, err, b.String())
+
+		return "", errs.Errorf("command execution failed: %s", err.Error())
+	}
+
+	if MaxExecuteOutputLenB <= len(b.String()) {
+		return "", errs.Errorf("command output exceeded limit of %d KB", MaxExecuteOutputLenB/1024)
+	}
+
+	return strings.TrimRight(b.String(), " \t\r\n"), nil
+}
+
+func (*ZBXExec) executeBackground(s string) error {
+	cmd := exec.Command("sh", "-c", s)
+
+	err := cmd.Start()
+	if err != nil {
+		return errs.Wrap(err, "cannot execute command")
+	}
+
+	go cmd.Wait()
+
+	return nil
+}
+
+func jobDoneListener(done chan<- error, cmd *exec.Cmd) {
+	done <- cmd.Wait()
+}
+
+func timeoutListener(ctx context.Context, cmd *exec.Cmd) {
+	<-ctx.Done()
+
+	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if err != nil {
+		log.Debugf("failed to kill cmd processes %s", err)
+	}
+}
