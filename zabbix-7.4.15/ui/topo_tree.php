@@ -323,10 +323,11 @@ function topoSameSubnet24(array $ips_a, array $ips_b): bool {
 }
 
 /**
- * Pairs (a < b) that the relationship rules say should be linked:
- * star around the Zabbix server node, and /24-subnet mesh between devices.
+ * Pairs (a < b) that the relationship rules say should be linked: star around the
+ * Zabbix server node, and /24-subnet mesh between devices. Run only on demand
+ * (the Auto-link button) — adding or editing devices never links by itself.
  */
-function topoAutoLinkPairs(array $nodes, ?int $only_nodeid = null): array {
+function topoAutoLinkPairs(array $nodes): array {
 	$devices = [];
 	$server_hostid = topoServerHostid();
 	$server_nodeid = null;
@@ -360,19 +361,10 @@ function topoAutoLinkPairs(array $nodes, ?int $only_nodeid = null): array {
 		$existing[min($a, $b).':'.max($a, $b)] = true;
 	}
 
-	// A hostless new device has nothing to relate on: skip instead of linking the whole map.
-	$targets = $only_nodeid !== null
-		? (isset($devices[$only_nodeid]) ? [$only_nodeid] : [])
-		: array_keys($devices);
-
-	if (!$targets) {
-		return [];
-	}
-
 	$ids = array_keys($devices);
 	$pairs = [];
 
-	foreach ($targets as $t) {
+	foreach ($ids as $t) {
 		if ($server_nodeid !== null && $server_nodeid !== $t) {
 			$key = min($t, $server_nodeid).':'.max($t, $server_nodeid);
 
@@ -548,18 +540,8 @@ if ($ajax) {
 			$reply(false, _('Database write failed (check the DB user privileges).'));
 		}
 
-		// Auto-link the new device by relationship rules (server star + same /24).
-		$added = 0;
-
-		foreach (topoAutoLinkPairs(topoLoad()[0], (int) $newid['topo_nodeid']) as $pair) {
-			if (DBexecute('INSERT INTO topo_link (nodeida, nodeidb) VALUES ('.$pair[0].', '.$pair[1].')')) {
-				$added++;
-			}
-		}
-
-		$reply(true, $added > 0
-			? _s('Device added + auto-linked %1$s link(s)', $added)
-			: _('Device added'));
+		// No automatic linking — connections are drawn by hand or via the Auto-link button.
+		$reply(true, _('Device added'));
 	}
 
 	if ($mode === 'update_device') {
@@ -598,18 +580,8 @@ if ($ajax) {
 			$reply(false, _('Database write failed (check the DB user privileges).'));
 		}
 
-		// Re-run the relationship rules so a newly bound host picks up its links.
-		$added = 0;
-
-		foreach (topoAutoLinkPairs(topoLoad()[0], $nodeid) as $pair) {
-			if (DBexecute('INSERT INTO topo_link (nodeida, nodeidb) VALUES ('.$pair[0].', '.$pair[1].')')) {
-				$added++;
-			}
-		}
-
-		$reply(true, $added > 0
-			? _s('Device updated + auto-linked %1$s link(s)', $added)
-			: _('Device updated.'));
+		// No automatic linking here either — existing links are kept, new ones are manual.
+		$reply(true, _('Device updated.'));
 	}
 
 	if ($mode === 'add_link') {
