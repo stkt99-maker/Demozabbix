@@ -22528,3 +22528,25 @@ msgstr "โทโพโลยี"
 
 msgid "Switch language"
 msgstr "สลับภาษา"
+
+msgid "IP addresses"
+msgstr "ที่อยู่ IP"
+
+msgid "No interface data."
+msgstr "ไม่มีข้อมูล interface"
+
+msgid "Device settings"
+msgstr "ตั้งค่าอุปกรณ์"
+
+msgid "No connections."
+msgstr "ไม่มีการเชื่อมต่อ"
+
+msgid "Device updated."
+msgstr "อัปเดตอุปกรณ์แล้ว"
+
+msgid "Device updated + auto-linked %1$s link(s)"
+msgstr "อัปเดตอุปกรณ์แล้ว + เชื่อมอัตโนมัติ %1$s เส้น"
+
+msgid "The selected node was not found."
+msgstr "ไม่พบโหนดที่เลือก"
+

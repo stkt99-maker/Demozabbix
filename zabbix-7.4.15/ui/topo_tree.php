@@ -182,6 +182,97 @@ function topoTraffic(array $nodes): array {
 }
 
 /**
+ * Interface details for one host: Zabbix interface IPs plus the latest
+ * net.if.in / net.if.out value per discovered interface (loopback excluded).
+ */
+function topoIfaces(int $hostid): array {
+	$ips = [];
+	$res = DBselect('SELECT ip FROM interface WHERE hostid = '.$hostid.' ORDER BY interfaceid');
+
+	while ($row = DBfetch($res)) {
+		if ($row['ip'] !== '' && !in_array($row['ip'], $ips)) {
+			$ips[] = $row['ip'];
+		}
+	}
+
+	$items = [];
+	$res = DBselect('SELECT itemid, key_, value_type FROM items WHERE hostid = '.$hostid.
+			' AND status = 0'.
+			' AND (key_ LIKE \'net.if.in[%\' OR key_ LIKE \'net.if.out[%\')');
+
+	while ($row = DBfetch($res)) {
+		$l = strpos($row['key_'], '[');
+		$r = strrpos($row['key_'], ']');
+
+		if ($l === false || $r === false || $r < $l) {
+			continue;
+		}
+
+		$spec = substr($row['key_'], $l + 1, $r - $l - 1);
+		$comma = strpos($spec, ',');
+		$ifname = trim($comma === false ? $spec : substr($spec, 0, $comma), '"\' ');
+		$mode = $comma === false ? '' : strtolower(trim(substr($spec, $comma + 1), '"\' '));
+
+		if ($ifname === '' || $ifname === 'lo') {
+			continue;
+		}
+
+		// keep plain byte counters only — dropped/errors/packets items are different metrics
+		if ($mode !== '' && $mode !== 'bytes') {
+			continue;
+		}
+
+		$items[(int) $row['itemid']] = [
+			'if'  => $ifname,
+			'dir' => strpos($row['key_'], 'net.if.in') === 0 ? 'in' : 'out',
+			'vt'  => (int) $row['value_type']
+		];
+	}
+
+	$by_table = ['history' => [], 'history_uint' => []];
+
+	foreach ($items as $itemid => $item) {
+		$by_table[$item['vt'] === 3 ? 'history_uint' : 'history'][] = $itemid;
+	}
+
+	$values = [];
+
+	foreach ($by_table as $table => $itemids) {
+		if (!$itemids) {
+			continue;
+		}
+
+		$res = DBselect('SELECT DISTINCT ON (itemid) itemid, value FROM '.$table.
+				' WHERE itemid IN ('.implode(',', $itemids).') ORDER BY itemid, clock DESC');
+
+		while ($row = DBfetch($res)) {
+			$values[(int) $row['itemid']] = (float) $row['value'];
+		}
+	}
+
+	$ifaces = [];
+
+	foreach ($items as $itemid => $item) {
+		if (!isset($values[$itemid])) {
+			continue;
+		}
+
+		if (!isset($ifaces[$item['if']])) {
+			$ifaces[$item['if']] = ['name' => $item['if'], 'in' => 0.0, 'out' => 0.0];
+		}
+
+		$ifaces[$item['if']][$item['dir']] += $values[$itemid];
+	}
+
+	$ifaces = array_values($ifaces);
+	usort($ifaces, static function (array $a, array $b): int {
+		return ($b['in'] + $b['out']) <=> ($a['in'] + $a['out']);
+	});
+
+	return ['ips' => $ips, 'ifaces' => $ifaces];
+}
+
+/**
  * The local Zabbix server's own host (it always has a 127.0.0.1 interface).
  */
 function topoServerHostid(): ?int {
@@ -328,6 +419,68 @@ if ($ajax && getRequest('mode') === 'status') {
 	exit;
 }
 
+// Read-only per-device details for the click-to-inspect card: the device's own
+// interfaces plus, for every topology link, the neighbor node and its IPs.
+if ($ajax && getRequest('mode') === 'ifaces') {
+	[$nodes, $links] = topoLoad();
+	session_write_close();
+
+	header('Content-Type: application/json; charset=UTF-8');
+
+	$nodeid = (int) getRequest('nodeid', 0);
+	$node = $nodes[$nodeid] ?? null;
+
+	if ($node === null || $node['type'] !== 'device') {
+		echo json_encode(['ok' => false, 'msg' => _('The selected node was not found.')],
+			JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+
+	$neighbor_ids = [];
+
+	foreach ($links as $l) {
+		if ($l['a'] === $nodeid) {
+			$neighbor_ids[] = $l['b'];
+		}
+		elseif ($l['b'] === $nodeid) {
+			$neighbor_ids[] = $l['a'];
+		}
+	}
+
+	$neighbors = [];
+	$host_to_node = [];
+
+	foreach (array_unique($neighbor_ids) as $nid) {
+		$n = $nodes[$nid] ?? null;
+
+		if ($n === null) {
+			continue;
+		}
+
+		$neighbors[$nid] = ['nodeid' => $nid, 'name' => $n['name'], 'ips' => []];
+
+		if ($n['hostid'] !== null) {
+			$host_to_node[$n['hostid']] = $nid;
+		}
+	}
+
+	if ($host_to_node) {
+		$host_ips = topoHostIps($host_to_node);
+
+		foreach ($host_to_node as $hid => $nid) {
+			$neighbors[$nid]['ips'] = $host_ips[$hid] ?? [];
+		}
+	}
+
+	$out = ['ok' => true, 'links' => array_values($neighbors)]
+		+ ($node['hostid'] !== null
+			? topoIfaces($node['hostid'])
+			: ['ips' => [], 'ifaces' => []]);
+
+	echo json_encode($out, JSON_UNESCAPED_UNICODE);
+	exit;
+}
+
 // Write actions, Super admin only, CSRF protected, JSON answers.
 if ($ajax) {
 	session_write_close();
@@ -407,6 +560,56 @@ if ($ajax) {
 		$reply(true, $added > 0
 			? _s('Device added + auto-linked %1$s link(s)', $added)
 			: _('Device added'));
+	}
+
+	if ($mode === 'update_device') {
+		$nodeid = (int) getRequest('nodeid', 0);
+		$name = trim(getRequest('name', ''));
+		$hostid = (int) getRequest('hostid', 0);
+		$groupid = (int) getRequest('groupid', 0);
+
+		$node = DBfetch(DBselect('SELECT topo_nodeid, type FROM topo_node WHERE topo_nodeid = '.$nodeid));
+
+		if ($node === false || $node['type'] !== 'device') {
+			$reply(false, _('The selected node was not found.'));
+		}
+
+		if ($name === '' || mb_strlen($name) > 64) {
+			$reply(false, _('Device name must be 1-64 characters.'));
+		}
+
+		if ($hostid > 0 && !API::Host()->get(['hostids' => $hostid, 'filter' => ['status' => HOST_STATUS_MONITORED],
+				'countOutput' => true])) {
+			$reply(false, _('The selected host was not found in Zabbix.'));
+		}
+
+		if ($groupid > 0) {
+			$group = DBfetch(DBselect('SELECT topo_nodeid FROM topo_node WHERE topo_nodeid = '.$groupid.
+					' AND type = \'group\''));
+
+			if ($group === false) {
+				$reply(false, _('The selected group was not found.'));
+			}
+		}
+
+		if (!DBexecute('UPDATE topo_node SET name = '.zbx_dbstr($name).', parentid = '
+				.($groupid > 0 ? $groupid : 'NULL').', hostid = '.($hostid > 0 ? $hostid : 'NULL')
+				.' WHERE topo_nodeid = '.$nodeid)) {
+			$reply(false, _('Database write failed (check the DB user privileges).'));
+		}
+
+		// Re-run the relationship rules so a newly bound host picks up its links.
+		$added = 0;
+
+		foreach (topoAutoLinkPairs(topoLoad()[0], $nodeid) as $pair) {
+			if (DBexecute('INSERT INTO topo_link (nodeida, nodeidb) VALUES ('.$pair[0].', '.$pair[1].')')) {
+				$added++;
+			}
+		}
+
+		$reply(true, $added > 0
+			? _s('Device updated + auto-linked %1$s link(s)', $added)
+			: _('Device updated.'));
 	}
 
 	if ($mode === 'add_link') {
@@ -495,6 +698,21 @@ foreach ($hosts as $host) {
 	$host_names[$host['hostid']] = $host['name'];
 }
 
+// <option> lists shared by the "add device" panel and the per-device settings modal.
+$host_options = '';
+foreach ($hosts as $host) {
+	$host_options .= '<option value="'.(int) $host['hostid'].'">'
+		.htmlspecialchars($host['name'], ENT_QUOTES).'</option>';
+}
+
+$group_options = '';
+foreach ($nodes as $n) {
+	if ($n['type'] === 'group') {
+		$group_options .= '<option value="'.$n['nodeid'].'">'
+			.htmlspecialchars($n['name'], ENT_QUOTES).'</option>';
+	}
+}
+
 $csrf_token = CCsrfTokenHelper::get('topo_tree.php');
 
 // UI strings for the client-side script, translated by the user's language.
@@ -505,6 +723,11 @@ $i18n = [
 		_('Not classified'), _('Information'), _('Warning'), _('Average'), _('High'), _('Critical')
 	],
 	'no_host' => _('Not bound to a host'),
+	'ips_label' => _('IP addresses'),
+	'no_iface_data' => _('No interface data.'),
+	'settings' => _('Device settings'),
+	'connections' => _('Connections'),
+	'no_links' => _('No connections.'),
 	'click_src_dst' => _('Click a source node, then the destination node.'),
 	'click_to_delete' => _('Click a node or a link to delete it.'),
 	'confirm_delete_link' => _('Delete this link?'),
@@ -583,7 +806,8 @@ header('Content-Type: text/html; charset=UTF-8');
 			background: linear-gradient(180deg, #2f8fe6, #1e6fc0); color: #fff;
 			transition: filter .15s, box-shadow .15s, border-color .15s, color .15s; }
 		.topo .tbtn:hover { filter: brightness(1.08); }
-		.topo .tbtn:focus-visible, .topo .panel input:focus-visible, .topo .panel select:focus-visible {
+		.topo .tbtn:focus-visible, .topo .panel input:focus-visible, .topo .panel select:focus-visible,
+		.topo .tmodal input:focus-visible, .topo .tmodal select:focus-visible {
 			outline: 2px solid var(--accent); outline-offset: 2px; }
 		.topo .tbtn.tbtn-ghost { background: transparent; color: #b9c9de; border-color: var(--line); }
 		.topo .tbtn.tbtn-ghost.is-active { color: #fff; border-color: var(--accent);
@@ -597,14 +821,15 @@ header('Content-Type: text/html; charset=UTF-8');
 			padding: 14px 18px; display: none; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 		.topo .panel.is-open { display: flex; }
 		.topo .panel label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; }
-		.topo .panel input, .topo .panel select { font-family: inherit; font-size: 13.5px; padding: 8px 11px;
+		.topo .panel input, .topo .panel select, .topo .tmodal input, .topo .tmodal select {
+			font-family: inherit; font-size: 13.5px; padding: 8px 11px;
 			border: 1px solid #2a3d5e; border-radius: 8px; min-width: 210px; background-color: #0c1526;
 			color: var(--text); height: auto; line-height: 1.5; }
 		/* global theme forces select height 24px + white bg — reset fully and draw our own arrow */
-		.topo .panel select { appearance: none; -webkit-appearance: none; padding-right: 30px;
+		.topo .panel select, .topo .tmodal select { appearance: none; -webkit-appearance: none; padding-right: 30px;
 			background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238296b3' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 			background-repeat: no-repeat; background-position: right 11px center; }
-		.topo .panel select option { background-color: #101a2e; color: var(--text); }
+		.topo .panel select option, .topo .tmodal select option { background-color: #101a2e; color: var(--text); }
 
 		/* ---- map area ---- */
 		.topo .map-area { flex: 1; position: relative; min-height: 0; }
@@ -678,6 +903,48 @@ header('Content-Type: text/html; charset=UTF-8');
 			margin-right: 5px; vertical-align: middle; }
 		.topo .hud b { font-weight: 600; color: var(--text); }
 
+		/* ---- interface detail card ---- */
+		.topo .ifcard { position: absolute; z-index: 30; width: 270px; padding: 11px 13px;
+			background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+			box-shadow: 0 12px 32px rgba(0, 0, 0, .45); cursor: default; }
+		.topo .ifcard h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 1px;
+			font-size: 13px; font-weight: 600; color: var(--text); }
+		.topo .ifcard .ifc-sub { color: var(--text-dim); font-size: 11.5px; }
+		.topo .ifcard .ifc-close { margin-left: auto; background: none; border: 0; color: var(--text-dim);
+			cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+		.topo .ifcard .ifc-close:hover { color: var(--text); background: var(--accent-soft); }
+		.topo .ifcard .ifc-body { margin-top: 8px; }
+		.topo .ifcard .ifc-ips { font-size: 11.5px; color: var(--text-dim); margin-bottom: 7px; }
+		.topo .ifcard .ifc-ips .mono { color: #6fc3ff; }
+		.topo .ifcard table { width: 100%; border-collapse: collapse; font-size: 12px; }
+		.topo .ifcard td { padding: 5px 0 4px; border-top: 1px solid var(--line-soft); }
+		.topo .ifcard td.ifc-name { color: var(--text); font-weight: 600; }
+		.topo .ifcard td.ifc-rate { text-align: right; color: var(--text-dim); white-space: nowrap; }
+		.topo .ifcard td.ifc-rate .mono { color: #6fc3ff; }
+		.topo .ifcard .ifc-note { color: var(--text-dim); font-size: 12px; }
+		.topo .ifcard .ifc-sec { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line-soft);
+			font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+			color: var(--text-dim); }
+		.topo .ifcard .ifc-conn { padding: 5px 0 1px; font-size: 12px; }
+		.topo .ifcard .ifc-conn-name { color: var(--text); font-weight: 600; }
+		.topo .ifcard .ifc-conn-ips { color: #6fc3ff; font-size: 11px; margin-top: 1px; word-break: break-all; }
+		.topo .ifcard .ifc-gear { margin-left: auto; background: none; border: 0; color: var(--text-dim);
+			cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+		.topo .ifcard .ifc-gear:hover { color: var(--accent); background: var(--accent-soft); }
+		.topo .ifcard .ifc-gear + .ifc-close { margin-left: 0; }
+
+		/* ---- device settings modal ---- */
+		.topo .tmodal-wrap { position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
+			background: rgba(4, 9, 18, .62); backdrop-filter: blur(3px); }
+		.topo .tmodal-wrap.is-on { display: grid; }
+		.topo .tmodal { width: min(430px, calc(100vw - 32px)); box-sizing: border-box; background: var(--surface-2);
+			border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px 18px;
+			box-shadow: 0 18px 48px rgba(0, 0, 0, .5); }
+		.topo .tmodal h3 { margin: 0; font-size: 15px; }
+		.topo .tmodal label { display: block; font-size: 12px; color: var(--text-dim); margin: 13px 0 5px; }
+		.topo .tmodal input, .topo .tmodal select { width: 100%; box-sizing: border-box; }
+		.topo .tmodal .tmodal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
 		/* ---- empty state ---- */
 		.topo .empty { position: absolute; inset: 0; display: none; place-items: center; z-index: 4;
 			pointer-events: none; text-align: center; }
@@ -746,22 +1013,39 @@ header('Content-Type: text/html; charset=UTF-8');
 			<label for="dev-host"><?= _('Bind to a Zabbix host (shows alert status)') ?></label>
 			<select id="dev-host">
 				<option value=""><?= _('— Not bound to a host —') ?></option>
-<?php foreach ($hosts as $host): ?>
-				<option value="<?= (int) $host['hostid'] ?>"><?= htmlspecialchars($host['name'], ENT_QUOTES) ?></option>
-<?php endforeach ?>
+				<?= $host_options ?>
 			</select>
 		</div>
 		<div>
 			<label for="dev-group"><?= _('Group membership') ?></label>
 			<select id="dev-group">
 				<option value=""><?= _('— No group —') ?></option>
-<?php foreach ($nodes as $n): if ($n['type'] !== 'group') continue; ?>
-				<option value="<?= $n['nodeid'] ?>"><?= htmlspecialchars($n['name'], ENT_QUOTES) ?></option>
-<?php endforeach ?>
+				<?= $group_options ?>
 			</select>
 		</div>
 		<button type="button" class="tbtn" id="btn-save-device"><?= _('Save') ?></button>
 		<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-device"><?= _('Cancel') ?></button>
+	</div>
+	<div class="tmodal-wrap" id="modal-settings">
+		<div class="tmodal" role="dialog" aria-modal="true">
+			<h3><?= _('Device settings') ?></h3>
+			<label for="set-name"><?= _('Display name') ?></label>
+			<input type="text" id="set-name" maxlength="64" placeholder="<?= _('e.g. Core Switch, HR-PC-01') ?>">
+			<label for="set-host"><?= _('Bind to a Zabbix host (shows alert status)') ?></label>
+			<select id="set-host">
+				<option value=""><?= _('— Not bound to a host —') ?></option>
+				<?= $host_options ?>
+			</select>
+			<label for="set-group"><?= _('Group membership') ?></label>
+			<select id="set-group">
+				<option value=""><?= _('— No group —') ?></option>
+				<?= $group_options ?>
+			</select>
+			<div class="tmodal-btns">
+				<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-settings"><?= _('Cancel') ?></button>
+				<button type="button" class="tbtn" id="btn-save-settings"><?= _('Save') ?></button>
+			</div>
+		</div>
 	</div>
 <?php endif ?>
 
@@ -1072,6 +1356,209 @@ function applyTraffic() {
 applyTraffic();
 document.getElementById('live-time').textContent = new Date().toLocaleTimeString('th-TH', {hour12: false});
 
+// ---- interface detail card (click a device) ----
+
+let ifcard = null, ifcardFor = null, suppressClick = false;
+
+function closeIfcard() {
+	if (ifcard) {
+		ifcard.remove();
+		ifcard = null;
+		ifcardFor = null;
+	}
+}
+
+async function openIfcard(n) {
+	if (ifcardFor === n.nodeid) {
+		closeIfcard();
+		return;
+	}
+
+	closeIfcard();
+
+	const card = document.createElement('div');
+	card.className = 'ifcard';
+
+	let x = n.posx + NODE_W + 12;
+
+	if (x + 280 > canvas.scrollWidth) {
+		x = Math.max(8, n.posx - 284);
+	}
+
+	card.style.left = x + 'px';
+	card.style.top = Math.max(8, n.posy) + 'px';
+
+	const st = statuses.get(n.nodeid) || {sev: -1};
+	const head = document.createElement('h4');
+	const dot = document.createElement('span');
+	dot.className = 'dot';
+	dot.style.background = sevColor(st.sev);
+	const title = document.createElement('span');
+	title.textContent = n.name;
+	const close = document.createElement('button');
+	close.type = 'button';
+	close.className = 'ifc-close';
+	close.textContent = '✕';
+	close.addEventListener('click', closeIfcard);
+	head.append(dot, title);
+
+	if (DATA.is_admin) {
+		const gear = document.createElement('button');
+		gear.type = 'button';
+		gear.className = 'ifc-gear';
+		gear.title = T.settings;
+		gear.textContent = '⚙';
+		gear.addEventListener('click', () => openSettings(n));
+		head.append(gear);
+	}
+
+	head.append(close);
+
+	const sub = document.createElement('div');
+	sub.className = 'ifc-sub';
+	sub.textContent = n.hostid !== null && DATA.host_names[n.hostid] ? DATA.host_names[n.hostid] : T.no_host;
+
+	const body = document.createElement('div');
+	body.className = 'ifc-body';
+	body.textContent = '…';
+
+	card.append(head, sub, body);
+	canvas.appendChild(card);
+	ifcard = card;
+	ifcardFor = n.nodeid;
+
+	const r = await post({mode: 'ifaces', nodeid: n.nodeid}, true);
+
+	if (ifcard !== card) return; // closed or replaced while loading
+
+	if (!r || !r.ok) {
+		body.textContent = r && r.msg ? r.msg : T.conn_failed;
+		return;
+	}
+
+	body.textContent = '';
+
+	if (n.hostid === null) {
+		const note = document.createElement('div');
+		note.className = 'ifc-note';
+		note.textContent = T.no_host;
+		body.appendChild(note);
+	}
+
+	if (n.hostid !== null && r.ips.length) {
+		const ips = document.createElement('div');
+		ips.className = 'ifc-ips';
+		ips.append(T.ips_label + ': ');
+
+		r.ips.forEach((ip, i) => {
+			if (i) ips.append(', ');
+
+			const m = document.createElement('span');
+			m.className = 'mono';
+			m.textContent = ip;
+			ips.append(m);
+		});
+
+		body.appendChild(ips);
+	}
+
+	if (!r.ifaces.length) {
+		const note = document.createElement('div');
+		note.className = 'ifc-note';
+		note.textContent = T.no_iface_data;
+		body.appendChild(note);
+	}
+
+	if (r.ifaces.length) {
+		const tbl = document.createElement('table');
+
+		for (const f of r.ifaces) {
+			const tr = document.createElement('tr');
+			const td1 = document.createElement('td');
+			td1.className = 'ifc-name';
+			td1.textContent = f.name;
+			const td2 = document.createElement('td');
+			td2.className = 'ifc-rate mono';
+			td2.textContent = '↓ ' + fmtBps(+f.in) + '  ↑ ' + fmtBps(+f.out);
+			tr.append(td1, td2);
+			tbl.appendChild(tr);
+		}
+
+		body.appendChild(tbl);
+	}
+
+	// what this node is wired to (topology links), with the neighbor's IPs
+	if (r.links && r.links.length) {
+		const sec = document.createElement('div');
+		sec.className = 'ifc-sec';
+		sec.textContent = T.connections;
+		body.appendChild(sec);
+
+		for (const nb of r.links) {
+			const conn = document.createElement('div');
+			conn.className = 'ifc-conn';
+			const nm = document.createElement('div');
+			nm.className = 'ifc-conn-name';
+			nm.textContent = nb.name;
+			conn.appendChild(nm);
+
+			if (nb.ips && nb.ips.length) {
+				const im = document.createElement('div');
+				im.className = 'ifc-conn-ips mono';
+				im.textContent = nb.ips.join(', ');
+				conn.appendChild(im);
+			}
+
+			body.appendChild(conn);
+		}
+	}
+	else {
+		const note = document.createElement('div');
+		note.className = 'ifc-note';
+		note.textContent = T.no_links;
+		body.appendChild(note);
+	}
+}
+
+// ---- device settings modal (admin) ----
+
+let settingsFor = null;
+
+function openSettings(n) {
+	settingsFor = n.nodeid;
+	document.getElementById('set-name').value = n.name;
+	document.getElementById('set-host').value = n.hostid !== null ? String(n.hostid) : '';
+	document.getElementById('set-group').value = n.parentid !== null ? String(n.parentid) : '';
+	document.getElementById('modal-settings').classList.add('is-on');
+	document.getElementById('set-name').focus();
+}
+
+function closeSettings() {
+	document.getElementById('modal-settings')?.classList.remove('is-on');
+	settingsFor = null;
+}
+
+document.getElementById('btn-save-settings')?.addEventListener('click', async () => {
+	const name = document.getElementById('set-name').value.trim();
+
+	if (!name) return toast(T.enter_device_name);
+
+	const r = await post({
+		mode: 'update_device', nodeid: settingsFor, name,
+		hostid: document.getElementById('set-host').value,
+		groupid: document.getElementById('set-group').value
+	});
+
+	if (r && r.ok) location.reload();
+	if (r && !r.ok) toast(r.msg);
+});
+
+document.getElementById('btn-cancel-settings')?.addEventListener('click', closeSettings);
+
+document.getElementById('modal-settings')?.addEventListener('click', e => {
+	if (e.target === e.currentTarget) closeSettings();
+});
+
 // ---- drag (admin) ----
 
 let drag = null;
@@ -1148,6 +1635,10 @@ canvas.addEventListener('pointerup', () => {
 
 		canvas.style.minWidth = Math.max(1200, ...[...nodes.values()].map(n => n.posx + 260)) + 'px';
 		canvas.style.minHeight = Math.max(700, ...[...nodes.values()].map(n => n.posy + 200)) + 'px';
+
+		// the click event still fires after a drag — swallow it so it doesn't open the card
+		suppressClick = true;
+		setTimeout(() => suppressClick = false, 0);
 	}
 
 	drag = null;
@@ -1160,6 +1651,7 @@ let mode = null, linkSrc = null;
 function setMode(next) {
 	mode = mode === next ? null : next;
 	linkSrc = null;
+	closeIfcard();
 
 	document.getElementById('btn-link')?.classList.toggle('is-active', mode === 'link');
 	document.getElementById('btn-delete')?.classList.toggle('is-active', mode === 'delete');
@@ -1174,11 +1666,31 @@ function setMode(next) {
 document.getElementById('btn-link')?.addEventListener('click', () => setMode('link'));
 document.getElementById('btn-delete')?.addEventListener('click', () => setMode('delete'));
 document.addEventListener('keydown', e => {
-	if (e.key === 'Escape') setMode(mode);
+	if (e.key === 'Escape') {
+		closeSettings();
+		closeIfcard();
+		setMode(mode);
+	}
 });
 
 canvas.addEventListener('click', async e => {
-	if (!mode) return;
+	if (suppressClick || e.target.closest('.ifcard')) return;
+
+	if (!mode) {
+		const nEl = e.target.closest('.node');
+		const n = nEl && nEl.classList.contains('is-dev') ? nodeById(+nEl.dataset.id) : null;
+
+		if (n) {
+			await openIfcard(n);
+		}
+		else {
+			closeIfcard();
+		}
+
+		return;
+	}
+
+	closeIfcard();
 
 	const hit = e.target.closest('.link-hit');
 	const nEl = e.target.closest('.node');
