@@ -886,6 +886,9 @@ header('Content-Type: text/html; charset=UTF-8');
 			border-radius: 9px; padding: 1px 7px; flex: 0 0 auto; }
 		.topo .node.is-src { border-color: var(--accent);
 			box-shadow: 0 0 0 3px var(--accent-soft), 0 0 18px rgba(63, 162, 255, .25); }
+		.topo .node.is-nb { border-color: var(--accent);
+			box-shadow: 0 0 0 2px var(--accent-soft), 0 0 14px rgba(63, 162, 255, .18); }
+		.topo .gbox.is-nb { border-color: rgba(63, 162, 255, .75); }
 		.topo .canvas.is-delmode .node:hover { border-color: var(--danger);
 			box-shadow: 0 0 0 3px rgba(228, 89, 89, .18); }
 		.topo .canvas.is-delmode .gbox:hover { border-color: var(--danger); }
@@ -1092,6 +1095,9 @@ const viewport = document.getElementById('viewport');
 const nodes = new Map(DATA.nodes.map(n => [n.nodeid, n]));
 const statuses = new Map(Object.entries(DATA.statuses).map(([k, v]) => [+k, v]));
 const traffic = new Map(Object.entries(DATA.traffic || {}).map(([k, v]) => [+k, v]));
+// device currently clicked (drives link highlighting); declared early because
+// drawLinks runs during the first render, before the ifcard section appears
+let selectedId = null;
 
 const sevColor = s => s >= 0 ? SEV[s].c : OK_COLOR;
 
@@ -1231,13 +1237,19 @@ function drawLinks(boxes) {
 		const w = sev >= 4 ? 3.5 : sev >= 2 ? 2.5 : 1.8;
 		const len = Math.hypot(p2.x - p1.x, p2.y - p1.y);
 
+		// when a device is selected its own links stand out and the rest fade
+		const mine = selectedId !== null && (l.a === selectedId || l.b === selectedId);
+		const glow = selectedId === null ? .14 : mine ? .4 : .04;
+		const alpha = selectedId === null ? .8 : mine ? 1 : .15;
+		const lw = mine ? w + 1.6 : w;
+
 		// soft under-glow, then the line itself, then packets moving both ways
 		html += '<line x1="'+p1.x+'" y1="'+p1.y+'" x2="'+p2.x+'" y2="'+p2.y+'" stroke="'+color+
-			'" stroke-width="'+(w + 6)+'" opacity=".14"/>' +
+			'" stroke-width="'+(lw + 6)+'" opacity="'+glow+'"/>' +
 			'<line x1="'+p1.x+'" y1="'+p1.y+'" x2="'+p2.x+'" y2="'+p2.y+'" stroke="'+color+
-			'" stroke-width="'+w+'" opacity=".8"/>';
+			'" stroke-width="'+lw+'" opacity="'+alpha+'"/>';
 
-		if (MOTION && len > 60) {
+		if (MOTION && len > 60 && (selectedId === null || mine)) {
 			const dur = Math.max(2.2, len / 150).toFixed(2);
 
 			html += '<circle r="2.4" fill="'+color+'" opacity=".9">' +
@@ -1353,6 +1365,20 @@ function applyTraffic() {
 	}
 }
 
+// ring the nodes the selected device is wired to
+function applySelection() {
+	for (const n of nodes.values()) {
+		const isNb = selectedId !== null && n.nodeid !== selectedId
+			&& DATA.links.some(l => (l.a === selectedId && l.b === n.nodeid)
+				|| (l.b === selectedId && l.a === n.nodeid));
+		const el = n.type === 'device'
+			? nodeEls.get(n.nodeid)
+			: (gboxEls[n.nodeid] || nodeEls.get(n.nodeid));
+
+		el?.classList.toggle('is-nb', isNb);
+	}
+}
+
 applyTraffic();
 document.getElementById('live-time').textContent = new Date().toLocaleTimeString('th-TH', {hour12: false});
 
@@ -1366,6 +1392,10 @@ function closeIfcard() {
 		ifcard = null;
 		ifcardFor = null;
 	}
+
+	selectedId = null;
+	applySelection();
+	updateGeometry();
 }
 
 async function openIfcard(n) {
@@ -1426,6 +1456,9 @@ async function openIfcard(n) {
 	canvas.appendChild(card);
 	ifcard = card;
 	ifcardFor = n.nodeid;
+	selectedId = n.nodeid;
+	applySelection();
+	updateGeometry();
 
 	const r = await post({mode: 'ifaces', nodeid: n.nodeid}, true);
 
@@ -1462,32 +1495,7 @@ async function openIfcard(n) {
 		body.appendChild(ips);
 	}
 
-	if (!r.ifaces.length) {
-		const note = document.createElement('div');
-		note.className = 'ifc-note';
-		note.textContent = T.no_iface_data;
-		body.appendChild(note);
-	}
-
-	if (r.ifaces.length) {
-		const tbl = document.createElement('table');
-
-		for (const f of r.ifaces) {
-			const tr = document.createElement('tr');
-			const td1 = document.createElement('td');
-			td1.className = 'ifc-name';
-			td1.textContent = f.name;
-			const td2 = document.createElement('td');
-			td2.className = 'ifc-rate mono';
-			td2.textContent = '↓ ' + fmtBps(+f.in) + '  ↑ ' + fmtBps(+f.out);
-			tr.append(td1, td2);
-			tbl.appendChild(tr);
-		}
-
-		body.appendChild(tbl);
-	}
-
-	// what this node is wired to (topology links), with the neighbor's IPs
+	// what this node is wired to (topology links), with the neighbor's IPs — shown first
 	if (r.links && r.links.length) {
 		const sec = document.createElement('div');
 		sec.className = 'ifc-sec';
@@ -1517,6 +1525,31 @@ async function openIfcard(n) {
 		note.className = 'ifc-note';
 		note.textContent = T.no_links;
 		body.appendChild(note);
+	}
+
+	if (!r.ifaces.length) {
+		const note = document.createElement('div');
+		note.className = 'ifc-note';
+		note.textContent = T.no_iface_data;
+		body.appendChild(note);
+	}
+
+	if (r.ifaces.length) {
+		const tbl = document.createElement('table');
+
+		for (const f of r.ifaces) {
+			const tr = document.createElement('tr');
+			const td1 = document.createElement('td');
+			td1.className = 'ifc-name';
+			td1.textContent = f.name;
+			const td2 = document.createElement('td');
+			td2.className = 'ifc-rate mono';
+			td2.textContent = '↓ ' + fmtBps(+f.in) + '  ↑ ' + fmtBps(+f.out);
+			tr.append(td1, td2);
+			tbl.appendChild(tr);
+		}
+
+		body.appendChild(tbl);
 	}
 }
 
