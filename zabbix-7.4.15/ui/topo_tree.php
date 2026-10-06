@@ -35,6 +35,7 @@ function topoLoad(): array {
 	// DBfetch($res, false): keep real NULLs — Zabbix's default DBfetch turns NULL into '0',
 	// which would make hostless/ungrouped nodes look like hostid/parentid 0 everywhere below.
 	$res = DBselect('SELECT topo_nodeid AS nodeid, type, name, parentid, hostid, posx, posy FROM topo_node ORDER BY topo_nodeid');
+	$hostids = [];
 
 	while ($row = DBfetch($res, false)) {
 		$nodes[(int) $row['nodeid']] = [
@@ -44,8 +45,47 @@ function topoLoad(): array {
 			'parentid' => $row['parentid'] !== null ? (int) $row['parentid'] : null,
 			'hostid'   => $row['hostid'] !== null ? (int) $row['hostid'] : null,
 			'posx'     => (int) $row['posx'],
-			'posy'     => (int) $row['posy']
+			'posy'     => (int) $row['posy'],
+			'monsrv'   => ''
 		];
+
+		if ($row['hostid'] !== null) {
+			$hostids[(int) $row['hostid']] = true;
+		}
+	}
+
+	// How Zabbix reaches each monitored host — the connection service/protocol shown on
+	// topology links ("Zabbix agent · TCP/10050"). The host's first interface wins.
+	if ($hostids) {
+		$list = implode(',', array_map('intval', array_keys($hostids)));
+		$types = [
+			INTERFACE_TYPE_AGENT => _('Zabbix agent'),
+			INTERFACE_TYPE_SNMP => _('SNMP'),
+			INTERFACE_TYPE_IPMI => _('IPMI'),
+			INTERFACE_TYPE_JMX => _('JMX')
+		];
+		$res = DBselect('SELECT hostid, type, port FROM interface WHERE hostid IN ('.$list.') ORDER BY interfaceid');
+		$monsrv = [];
+
+		while ($row = DBfetch($res)) {
+			$hid = (int) $row['hostid'];
+
+			if (isset($monsrv[$hid])) {
+				continue;
+			}
+
+			$t = (int) $row['type'];
+			$monsrv[$hid] = ($types[$t] ?? _('Unknown')).' · '
+				.($t === INTERFACE_TYPE_SNMP || $t === INTERFACE_TYPE_IPMI ? 'UDP' : 'TCP').'/'.$row['port'];
+		}
+
+		foreach ($nodes as &$node) {
+			if ($node['hostid'] !== null) {
+				$node['monsrv'] = $monsrv[$node['hostid']] ?? '';
+			}
+		}
+
+		unset($node);
 	}
 
 	$links = [];
@@ -1277,8 +1317,15 @@ function drawLinks(boxes) {
 				' path="M'+p1.x+' '+p1.y+' L'+p2.x+' '+p2.y+'"/></circle>';
 		}
 
-		// service / protocol tag on the line itself, when set
-		const tag = [l.service, l.proto].filter(Boolean).join(' · ');
+		// service / protocol tag: manual notes first, otherwise how Zabbix reaches the
+		// peer — auto ones appear on the selected device's links, manual ones always show
+		let tag = [l.service, l.proto].filter(Boolean).join(' · ');
+
+		if (!tag && selectedId !== null && (l.a === selectedId || l.b === selectedId)) {
+			const peer = nodeById(l.a === selectedId ? l.b : l.a);
+
+			tag = peer && peer.monsrv ? peer.monsrv : '';
+		}
 
 		if (tag) {
 			const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
@@ -1541,7 +1588,12 @@ async function openIfcard(n) {
 			nm.textContent = nb.name;
 			conn.appendChild(nm);
 
-			const meta = [nb.service, nb.proto].filter(Boolean).join(' · ');
+			let meta = [nb.service, nb.proto].filter(Boolean).join(' · ');
+
+			if (!meta) {
+				const pn = nodes.get(nb.nodeid);
+				meta = pn && pn.monsrv ? pn.monsrv : '';
+			}
 
 			if (meta) {
 				const md = document.createElement('div');
