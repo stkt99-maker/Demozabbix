@@ -22372,3 +22372,153 @@ msgstr ""
 
 msgid "Logo (Branding)"
 msgstr "โลโก้ (Branding)"
+
+msgid "Only Super admins can edit the topology."
+msgstr "ต้องเป็น Super admin จึงจะแก้ไขแผนผังได้"
+
+msgid "Invalid CSRF token — refresh the page and try again."
+msgstr "CSRF token ไม่ถูกต้อง รีเฟรชหน้าแล้วลองใหม่"
+
+msgid "Group name must be 1-64 characters."
+msgstr "ชื่อกลุ่มต้องมี 1-64 ตัวอักษร"
+
+msgid "Database write failed (check the DB user privileges)."
+msgstr "เขียนฐานข้อมูลไม่สำเร็จ (ตรวจสิทธิ์ของ user DB)"
+
+msgid "Group added."
+msgstr "เพิ่มกลุ่มแล้ว"
+
+msgid "Device name must be 1-64 characters."
+msgstr "ชื่ออุปกรณ์ต้องมี 1-64 ตัวอักษร"
+
+msgid "The selected host was not found in Zabbix."
+msgstr "ไม่พบ host ที่เลือกใน Zabbix"
+
+msgid "The selected group was not found."
+msgstr "ไม่พบกลุ่มที่เลือก"
+
+msgid "Device added"
+msgstr "เพิ่มอุปกรณ์แล้ว"
+
+msgid "Device added + auto-linked %1$s link(s)"
+msgstr "เพิ่มอุปกรณ์แล้ว + เชื่อมอัตโนมัติ %1$s เส้น"
+
+msgid "Pick valid source and destination nodes."
+msgstr "เลือกโหนดต้นทางและปลายทางให้ถูกต้อง"
+
+msgid "The selected nodes were not found."
+msgstr "ไม่พบโหนดที่เลือก"
+
+msgid "This link already exists, or the database write failed."
+msgstr "เส้นเชื่อมนี้มีอยู่แล้วหรือเขียนฐานข้อมูลไม่สำเร็จ"
+
+msgid "Link added."
+msgstr "เพิ่มเส้นเชื่อมแล้ว"
+
+msgid "Auto-linked %1$s new link(s) (same subnet + around Zabbix server)"
+msgstr "เชื่อมอัตโนมัติเพิ่ม %1$s เส้น (subnet เดียวกัน + รอบ Zabbix server)"
+
+msgid "All detected relationships are already linked."
+msgstr "ทุกความสัมพันธ์ที่ตรวจพบมีเส้นเชื่อมอยู่แล้ว"
+
+msgid "The node to delete was not found."
+msgstr "ไม่พบโหนดที่จะลบ"
+
+msgid "Node deleted."
+msgstr "ลบโหนดแล้ว"
+
+msgid "Link deleted."
+msgstr "ลบเส้นเชื่อมแล้ว"
+
+msgid "Unknown command."
+msgstr "ไม่รู้จักคำสั่ง"
+
+msgid "Network topology (Hybrid)"
+msgstr "แผนผังเครือข่าย (Hybrid Topology)"
+
+msgid "Arrange and connect nodes freely. Status follows real host problem severity."
+msgstr "จัดวางและเชื่อมโหนดได้อิสระ สถานะตามระดับปัญหาจริงของ host"
+
+msgid "LIVE"
+msgstr "สด"
+
+msgid "+ Group"
+msgstr "+ กลุ่ม"
+
+msgid "+ Device"
+msgstr "+ อุปกรณ์"
+
+msgid "Auto-link"
+msgstr "เส้นอัตโนมัติ"
+
+msgid "Link by relationship: same subnets + a star around the Zabbix server."
+msgstr "เชื่อมตามความสัมพันธ์: subnet เดียวกัน + ดาวรอบ Zabbix server"
+
+msgid "Link mode"
+msgstr "โหมดเชื่อมเส้น"
+
+msgid "Delete mode"
+msgstr "โหมดลบ"
+
+msgid "View only — only Super admins can edit."
+msgstr "ดูแบบอย่างเดียว — เฉพาะ Super admin จึงแก้ไขได้"
+
+msgid "← Back to main menu"
+msgstr "← กลับหน้าหลัก"
+
+msgid "e.g. Headquarters, Server Room"
+msgstr "เช่น สำนักงานใหญ่, Server Room"
+
+msgid "Display name"
+msgstr "ชื่อที่แสดง"
+
+msgid "e.g. Core Switch, HR-PC-01"
+msgstr "เช่น Core Switch, HR-PC-01"
+
+msgid "Bind to a Zabbix host (shows alert status)"
+msgstr "ผูกกับ Host ใน Zabbix (แสดงสถานะเตือน)"
+
+msgid "— Not bound to a host —"
+msgstr "— ไม่ผูก host —"
+
+msgid "Group membership"
+msgstr "สังกัดกลุ่ม"
+
+msgid "— No group —"
+msgstr "— ไม่สังกัดกลุ่ม —"
+
+msgid "The canvas is empty"
+msgstr "ผืนแผนผังยังว่างอยู่"
+
+msgid "Start with the «+ Group» or «+ Device» buttons above, then drag them anywhere."
+msgstr "เริ่มด้วยปุ่ม «+ กลุ่ม» หรือ «+ อุปกรณ์» ด้านบน แล้วลากวางตามใจ"
+
+msgid "Not bound to a host"
+msgstr "ไม่ผูก host"
+
+msgid "Click a source node, then the destination node."
+msgstr "คลิกโหนดต้นทาง แล้วคลิกโหนดปลายทาง"
+
+msgid "Click a node or a link to delete it."
+msgstr "คลิกโหนดหรือเส้นเชื่อมที่จะลบ"
+
+msgid "Delete this link?"
+msgstr "ลบเส้นเชื่อมนี้?"
+
+msgid "Delete \"%1$s\"?"
+msgstr "ลบ \"%1$s\"?"
+
+msgid "Delete \"%1$s\"? Devices in the group will be ungrouped, not deleted."
+msgstr "ลบ \"%1$s\"? (อุปกรณ์ในกลุ่มจะถูกปล่อยออก ไม่ถูกลบ)"
+
+msgid "Source selected — click the destination node."
+msgstr "เลือกต้นทางแล้ว — คลิกโหนดปลายทาง"
+
+msgid "Enter a group name first."
+msgstr "ใส่ชื่อกลุ่มก่อน"
+
+msgid "Enter a device name first."
+msgstr "ใส่ชื่ออุปกรณ์ก่อน"
+
+msgid "Connection failed — try again."
+msgstr "การเชื่อมต่อขัดข้อง ลองใหม่อีกครั้ง"

@@ -339,11 +339,11 @@ if ($ajax) {
 	};
 
 	if (!$is_admin) {
-		$reply(false, 'ต้องเป็น Super admin จึงจะแก้ไขแผนผังได้');
+		$reply(false, _('Only Super admins can edit the topology.'));
 	}
 
 	if (!CCsrfTokenHelper::check(getRequest('csrf_token', ''), 'topo_tree.php')) {
-		$reply(false, 'CSRF token ไม่ถูกต้อง รีเฟรชหน้าแล้วลองใหม่');
+		$reply(false, _('Invalid CSRF token — refresh the page and try again.'));
 	}
 
 	$mode = getRequest('mode', '');
@@ -352,15 +352,15 @@ if ($ajax) {
 		$name = trim(getRequest('name', ''));
 
 		if ($name === '' || mb_strlen($name) > 64) {
-			$reply(false, 'ชื่อกลุ่มต้องมี 1-64 ตัวอักษร');
+			$reply(false, _('Group name must be 1-64 characters.'));
 		}
 
 		if (!DBexecute('INSERT INTO topo_node (type, name, posx, posy) VALUES (\'group\', '.zbx_dbstr($name).', '
 			.max(0, (int) getRequest('x', 60)).', '.max(0, (int) getRequest('y', 60)).')')) {
-			$reply(false, 'เขียนฐานข้อมูลไม่สำเร็จ (ตรวจสิทธิ์ของ user DB)');
+			$reply(false, _('Database write failed (check the DB user privileges).'));
 		}
 
-		$reply(true, 'เพิ่มกลุ่มแล้ว');
+		$reply(true, _('Group added.'));
 	}
 
 	if ($mode === 'add_device') {
@@ -369,12 +369,12 @@ if ($ajax) {
 		$groupid = (int) getRequest('groupid', 0);
 
 		if ($name === '' || mb_strlen($name) > 64) {
-			$reply(false, 'ชื่ออุปกรณ์ต้องมี 1-64 ตัวอักษร');
+			$reply(false, _('Device name must be 1-64 characters.'));
 		}
 
 		if ($hostid > 0 && !API::Host()->get(['hostids' => $hostid, 'filter' => ['status' => HOST_STATUS_MONITORED],
 				'countOutput' => true])) {
-			$reply(false, 'ไม่พบ host ที่เลือกใน Zabbix');
+			$reply(false, _('The selected host was not found in Zabbix.'));
 		}
 
 		if ($groupid > 0) {
@@ -382,7 +382,7 @@ if ($ajax) {
 					' AND type = \'group\''));
 
 			if ($group === false) {
-				$reply(false, 'ไม่พบกลุ่มที่เลือก');
+				$reply(false, _('The selected group was not found.'));
 			}
 		}
 
@@ -392,7 +392,7 @@ if ($ajax) {
 			') RETURNING topo_nodeid'));
 
 		if ($newid === false) {
-			$reply(false, 'เขียนฐานข้อมูลไม่สำเร็จ (ตรวจสิทธิ์ของ user DB)');
+			$reply(false, _('Database write failed (check the DB user privileges).'));
 		}
 
 		// Auto-link the new device by relationship rules (server star + same /24).
@@ -404,7 +404,9 @@ if ($ajax) {
 			}
 		}
 
-		$reply(true, 'เพิ่มอุปกรณ์แล้ว'.($added > 0 ? ' + เชื่อมอัตโนมัติ '.$added.' เส้น' : ''));
+		$reply(true, $added > 0
+			? _s('Device added + auto-linked %1$s link(s)', $added)
+			: _('Device added'));
 	}
 
 	if ($mode === 'add_link') {
@@ -412,21 +414,21 @@ if ($ajax) {
 		$b = (int) getRequest('b', 0);
 
 		if ($a <= 0 || $b <= 0 || $a === $b) {
-			$reply(false, 'เลือกโหนดต้นทางและปลายทางให้ถูกต้อง');
+			$reply(false, _('Pick valid source and destination nodes.'));
 		}
 
 		$exists = DBfetch(DBselect('SELECT n1.topo_nodeid AS a, n2.topo_nodeid AS b FROM topo_node n1'.
 				' JOIN topo_node n2 ON n2.topo_nodeid = '.$b.' WHERE n1.topo_nodeid = '.$a));
 
 		if ($exists === false) {
-			$reply(false, 'ไม่พบโหนดที่เลือก');
+			$reply(false, _('The selected nodes were not found.'));
 		}
 
 		if (!DBexecute('INSERT INTO topo_link (nodeida, nodeidb) VALUES ('.$a.', '.$b.')')) {
-			$reply(false, 'เส้นเชื่อมนี้มีอยู่แล้วหรือเขียนฐานข้อมูลไม่สำเร็จ');
+			$reply(false, _('This link already exists, or the database write failed.'));
 		}
 
-		$reply(true, 'เพิ่มเส้นเชื่อมแล้ว');
+		$reply(true, _('Link added.'));
 	}
 
 	if ($mode === 'auto_link') {
@@ -440,28 +442,28 @@ if ($ajax) {
 		}
 
 		$reply(true, $added > 0
-			? 'เชื่อมอัตโนมัติเพิ่ม '.$added.' เส้น (subnet เดียวกัน + รอบ Zabbix server)'
-			: 'ทุกความสัมพันธ์ที่ตรวจพบมีเส้นเชื่อมอยู่แล้ว', ['added' => $added]);
+			? _s('Auto-linked %1$s new link(s) (same subnet + around Zabbix server)', $added)
+			: _('All detected relationships are already linked.'), ['added' => $added]);
 	}
 
 	if ($mode === 'delete_node') {
 		$nodeid = (int) getRequest('nodeid', 0);
 
 		if (!DBfetch(DBselect('SELECT topo_nodeid FROM topo_node WHERE topo_nodeid = '.$nodeid))) {
-			$reply(false, 'ไม่พบโหนดที่จะลบ');
+			$reply(false, _('The node to delete was not found.'));
 		}
 
 		// Ungroup members first so deleting a group keeps its devices on the canvas.
 		DBexecute('UPDATE topo_node SET parentid = NULL WHERE parentid = '.$nodeid);
 		DBexecute('DELETE FROM topo_node WHERE topo_nodeid = '.$nodeid);
-		$reply(true, 'ลบโหนดแล้ว');
+		$reply(true, _('Node deleted.'));
 	}
 
 	if ($mode === 'delete_link') {
 		$linkid = (int) getRequest('linkid', 0);
 
 		DBexecute('DELETE FROM topo_link WHERE topo_linkid = '.$linkid);
-		$reply(true, 'ลบเส้นเชื่อมแล้ว');
+		$reply(true, _('Link deleted.'));
 	}
 
 	if ($mode === 'move') {
@@ -473,7 +475,7 @@ if ($ajax) {
 		$reply(true);
 	}
 
-	$reply(false, 'ไม่รู้จักคำสั่ง');
+	$reply(false, _('Unknown command.'));
 }
 
 [$nodes, $links] = topoLoad();
@@ -495,6 +497,25 @@ foreach ($hosts as $host) {
 
 $csrf_token = CCsrfTokenHelper::get('topo_tree.php');
 
+// UI strings for the client-side script, translated by the user's language.
+$i18n = [
+	'sev_legend' => _('Severity'),
+	'sev_ok' => _('Normal'),
+	'sev' => [
+		_('Not classified'), _('Information'), _('Warning'), _('Average'), _('High'), _('Critical')
+	],
+	'no_host' => _('Not bound to a host'),
+	'click_src_dst' => _('Click a source node, then the destination node.'),
+	'click_to_delete' => _('Click a node or a link to delete it.'),
+	'confirm_delete_link' => _('Delete this link?'),
+	'confirm_delete_node' => _('Delete "%1$s"?'),
+	'confirm_delete_group' => _('Delete "%1$s"? Devices in the group will be ungrouped, not deleted.'),
+	'src_selected' => _('Source selected — click the destination node.'),
+	'enter_group_name' => _('Enter a group name first.'),
+	'enter_device_name' => _('Enter a device name first.'),
+	'conn_failed' => _('Connection failed — try again.')
+];
+
 $data = [
 	'nodes' => array_values($nodes),
 	'links' => $links,
@@ -510,7 +531,7 @@ session_write_close();
 header('Content-Type: text/html; charset=UTF-8');
 ?>
 <!doctype html>
-<html lang="th">
+<html lang="<?= str_starts_with(CWebUser::$data['lang'], 'th') ? 'th' : 'en' ?>">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
@@ -689,58 +710,58 @@ header('Content-Type: text/html; charset=UTF-8');
 			<circle cx="19" cy="13" r="3" fill="#3fa2ff"/>
 		</svg>
 		<div>
-			<h1>แผนผังเครือข่าย (Hybrid Topology)</h1>
-			<div class="sub">จัดวางและเชื่อมโหนดได้อิสระ สถานะตามระดับปัญหาจริงของ host</div>
+			<h1><?= _('Network topology (Hybrid)') ?></h1>
+			<div class="sub"><?= _('Arrange and connect nodes freely. Status follows real host problem severity.') ?></div>
 		</div>
 		<span class="spacer"></span>
-		<span class="live"><span class="live-dot"></span>สด <span class="mono" id="live-time"></span></span>
+		<span class="live"><span class="live-dot"></span><?= _('LIVE') ?> <span class="mono" id="live-time"></span></span>
 <?php if ($is_admin): ?>
-		<button type="button" class="tbtn" id="btn-add-group">+ กลุ่ม</button>
-		<button type="button" class="tbtn" id="btn-add-device">+ อุปกรณ์</button>
-		<button type="button" class="tbtn tbtn-ghost" id="btn-autolink" title="เชื่อมตามความสัมพันธ์: subnet เดียวกัน + ดาวรอบ Zabbix server">เส้นอัตโนมัติ</button>
-		<button type="button" class="tbtn tbtn-ghost" id="btn-link">โหมดเชื่อมเส้น</button>
-		<button type="button" class="tbtn tbtn-ghost is-danger" id="btn-delete">โหมดลบ</button>
+		<button type="button" class="tbtn" id="btn-add-group"><?= _('+ Group') ?></button>
+		<button type="button" class="tbtn" id="btn-add-device"><?= _('+ Device') ?></button>
+		<button type="button" class="tbtn tbtn-ghost" id="btn-autolink" title="<?= _('Link by relationship: same subnets + a star around the Zabbix server.') ?>"><?= _('Auto-link') ?></button>
+		<button type="button" class="tbtn tbtn-ghost" id="btn-link"><?= _('Link mode') ?></button>
+		<button type="button" class="tbtn tbtn-ghost is-danger" id="btn-delete"><?= _('Delete mode') ?></button>
 <?php else: ?>
 		<span class="sub" style="padding: 4px 10px; border: 1px solid var(--line-soft); border-radius: 8px;">
-			ดูแบบอย่างเดียว — เฉพาะ Super admin จึงแก้ไขได้</span>
+			<?= _('View only — only Super admins can edit.') ?></span>
 <?php endif ?>
-		<a class="back" href="zabbix.php">← กลับหน้าหลัก</a>
+		<a class="back" href="zabbix.php"><?= _('← Back to main menu') ?></a>
 	</div>
 
 <?php if ($is_admin): ?>
 	<div class="panel" id="panel-group">
 		<div>
-			<label for="group-name">ชื่อกลุ่ม</label>
-			<input type="text" id="group-name" maxlength="64" placeholder="เช่น สำนักงานใหญ่, Server Room">
+			<label for="group-name"><?= _('Group name') ?></label>
+			<input type="text" id="group-name" maxlength="64" placeholder="<?= _('e.g. Headquarters, Server Room') ?>">
 		</div>
-		<button type="button" class="tbtn" id="btn-save-group">บันทึก</button>
-		<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-group">ยกเลิก</button>
+		<button type="button" class="tbtn" id="btn-save-group"><?= _('Save') ?></button>
+		<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-group"><?= _('Cancel') ?></button>
 	</div>
 	<div class="panel" id="panel-device">
 		<div>
-			<label for="dev-name">ชื่อที่แสดง</label>
-			<input type="text" id="dev-name" maxlength="64" placeholder="เช่น Core Switch, HR-PC-01">
+			<label for="dev-name"><?= _('Display name') ?></label>
+			<input type="text" id="dev-name" maxlength="64" placeholder="<?= _('e.g. Core Switch, HR-PC-01') ?>">
 		</div>
 		<div>
-			<label for="dev-host">ผูกกับ Host ใน Zabbix (แสดงสถานะเตือน)</label>
+			<label for="dev-host"><?= _('Bind to a Zabbix host (shows alert status)') ?></label>
 			<select id="dev-host">
-				<option value="">— ไม่ผูก host —</option>
+				<option value=""><?= _('— Not bound to a host —') ?></option>
 <?php foreach ($hosts as $host): ?>
 				<option value="<?= (int) $host['hostid'] ?>"><?= htmlspecialchars($host['name'], ENT_QUOTES) ?></option>
 <?php endforeach ?>
 			</select>
 		</div>
 		<div>
-			<label for="dev-group">สังกัดกลุ่ม</label>
+			<label for="dev-group"><?= _('Group membership') ?></label>
 			<select id="dev-group">
-				<option value="">— ไม่สังกัดกลุ่ม —</option>
+				<option value=""><?= _('— No group —') ?></option>
 <?php foreach ($nodes as $n): if ($n['type'] !== 'group') continue; ?>
 				<option value="<?= $n['nodeid'] ?>"><?= htmlspecialchars($n['name'], ENT_QUOTES) ?></option>
 <?php endforeach ?>
 			</select>
 		</div>
-		<button type="button" class="tbtn" id="btn-save-device">บันทึก</button>
-		<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-device">ยกเลิก</button>
+		<button type="button" class="tbtn" id="btn-save-device"><?= _('Save') ?></button>
+		<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-device"><?= _('Cancel') ?></button>
 	</div>
 <?php endif ?>
 
@@ -755,8 +776,8 @@ header('Content-Type: text/html; charset=UTF-8');
 
 		<div class="empty" id="empty">
 			<div class="e-card">
-				<strong>ผืนแผนผังยังว่างอยู่</strong>
-				เริ่มด้วยปุ่ม «+ กลุ่ม» หรือ «+ อุปกรณ์» ด้านบน แล้วลากวางตามใจ
+				<strong><?= _('The canvas is empty') ?></strong>
+				<?= _('Start with the «+ Group» or «+ Device» buttons above, then drag them anywhere.') ?>
 			</div>
 		</div>
 	</div>
@@ -767,14 +788,15 @@ header('Content-Type: text/html; charset=UTF-8');
 <script>
 const DATA = <?= json_encode($data, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS
 	| JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+const T = <?= json_encode($i18n, JSON_UNESCAPED_UNICODE) ?>;
 
 const SEV = [
-	{c: '#97AAB3', t: 'ไม่จำแนก'},
-	{c: '#7499FF', t: 'ข้อมูล'},
-	{c: '#FFC859', t: 'เตือน'},
-	{c: '#FFA059', t: 'เฉลี่ย'},
-	{c: '#E97659', t: 'สูง'},
-	{c: '#E45959', t: 'วิกฤต'}
+	{c: '#97AAB3', t: T.sev[0]},
+	{c: '#7499FF', t: T.sev[1]},
+	{c: '#FFC859', t: T.sev[2]},
+	{c: '#FFA059', t: T.sev[3]},
+	{c: '#E97659', t: T.sev[4]},
+	{c: '#E45959', t: T.sev[5]}
 ];
 const OK_COLOR = '#38d17e';
 const NODE_W = 170, NODE_H = 68, CHIP_W = 130, CHIP_H = 40;
@@ -805,8 +827,8 @@ function fmtBps(v) {
 
 // HUD legend
 document.getElementById('hud').innerHTML =
-	'<b>ระดับการแจ้งเตือน</b>' +
-	[['ปกติ', OK_COLOR], ...SEV.map(s => [s.t, s.c])]
+	'<b>' + T.sev_legend + '</b>' +
+	[[T.sev_ok, OK_COLOR], ...SEV.map(s => [s.t, s.c])]
 		.map(([t, c]) => '<span><span class="dot" style="background:'+c+'"></span>'+t+'</span>').join('');
 
 if (!DATA.nodes.length) {
@@ -870,7 +892,7 @@ function makeNode(n) {
 	if (n.type === 'device') {
 		const sub = document.createElement('div');
 		sub.className = 'n-sub mono';
-		const host = n.hostid && DATA.host_names[n.hostid] ? DATA.host_names[n.hostid] : 'ไม่ผูก host';
+		const host = n.hostid && DATA.host_names[n.hostid] ? DATA.host_names[n.hostid] : T.no_host;
 		sub.textContent = host;
 
 		const tr = document.createElement('div');
@@ -1146,7 +1168,7 @@ function setMode(next) {
 
 	document.querySelectorAll('.node.is-src').forEach(el => el.classList.remove('is-src'));
 
-	if (mode) toast(mode === 'link' ? 'คลิกโหนดต้นทาง แล้วคลิกโหนดปลายทาง' : 'คลิกโหนดหรือเส้นเชื่อมที่จะลบ');
+	if (mode) toast(mode === 'link' ? T.click_src_dst : T.click_to_delete);
 }
 
 document.getElementById('btn-link')?.addEventListener('click', () => setMode('link'));
@@ -1165,7 +1187,7 @@ canvas.addEventListener('click', async e => {
 		if (hit) {
 			const link = DATA.links.find(l => l.linkid === +hit.dataset.linkid);
 
-			if (link && confirm('ลบเส้นเชื่อมนี้?')) {
+			if (link && confirm(T.confirm_delete_link)) {
 				const r = await post({mode: 'delete_link', linkid: link.linkid});
 
 				if (r && r.ok) location.reload();
@@ -1174,8 +1196,9 @@ canvas.addEventListener('click', async e => {
 		else if (nEl) {
 			const n = nodeById(+nEl.dataset.id);
 
-			if (n && confirm('ลบ "' + n.name + '"' +
-					(n.type === 'group' ? ' (อุปกรณ์ในกลุ่มจะถูกปล่อยออก ไม่ถูกลบ)' : '') + ' ?')) {
+			if (n && confirm((n.type === 'group'
+					? T.confirm_delete_group
+					: T.confirm_delete_node).replace('%1$s', n.name))) {
 				const r = await post({mode: 'delete_node', nodeid: n.nodeid});
 
 				if (r && r.ok) location.reload();
@@ -1191,7 +1214,7 @@ canvas.addEventListener('click', async e => {
 		if (linkSrc === null) {
 			linkSrc = id;
 			nEl.classList.add('is-src');
-			toast('เลือกต้นทางแล้ว — คลิกโหนดปลายทาง');
+			toast(T.src_selected);
 		}
 		else if (linkSrc !== id) {
 			const r = await post({mode: 'add_link', a: linkSrc, b: id});
@@ -1238,7 +1261,7 @@ function viewportCenter() {
 document.getElementById('btn-save-group')?.addEventListener('click', async () => {
 	const name = document.getElementById('group-name').value.trim();
 
-	if (!name) return toast('ใส่ชื่อกลุ่มก่อน');
+	if (!name) return toast(T.enter_group_name);
 
 	const c = viewportCenter();
 	const r = await post({mode: 'add_group', name, x: c.x, y: c.y});
@@ -1250,7 +1273,7 @@ document.getElementById('btn-save-group')?.addEventListener('click', async () =>
 document.getElementById('btn-save-device')?.addEventListener('click', async () => {
 	const name = document.getElementById('dev-name').value.trim();
 
-	if (!name) return toast('ใส่ชื่ออุปกรณ์ก่อน');
+	if (!name) return toast(T.enter_device_name);
 
 	const c = viewportCenter();
 	const r = await post({
@@ -1280,7 +1303,7 @@ async function post(body, silent) {
 		return await res.json();
 	}
 	catch (e) {
-		if (!silent) toast('การเชื่อมต่อขัดข้อง ลองใหม่อีกครั้ง');
+		if (!silent) toast(T.conn_failed);
 		return null;
 	}
 }
