@@ -22550,3 +22550,21 @@ msgstr "อัปเดตอุปกรณ์แล้ว + เชื่อม
 msgid "The selected node was not found."
 msgstr "ไม่พบโหนดที่เลือก"
 
+msgid "Link settings"
+msgstr "ตั้งค่าเส้นเชื่อม"
+
+msgid "Link updated."
+msgstr "บันทึกเส้นเชื่อมแล้ว"
+
+msgid "The selected link was not found."
+msgstr "ไม่พบเส้นเชื่อมที่เลือก"
+
+msgid "Service or protocol text is too long."
+msgstr "ข้อความ service หรือ protocol ยาวเกินไป"
+
+msgid "e.g. HTTPS, SQL replication"
+msgstr "เช่น HTTPS, SQL Replication"
+
+msgid "e.g. TCP/443, UDP/161"
+msgstr "เช่น TCP/443, UDP/161"
+

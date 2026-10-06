@@ -49,13 +49,16 @@ function topoLoad(): array {
 	}
 
 	$links = [];
-	$res = DBselect('SELECT topo_linkid AS linkid, nodeida, nodeidb FROM topo_link ORDER BY topo_linkid');
+	// DBfetch($res, false): service/proto may be NULL — keep them as '' instead of '0'.
+	$res = DBselect('SELECT topo_linkid AS linkid, nodeida, nodeidb, service, proto FROM topo_link ORDER BY topo_linkid');
 
-	while ($row = DBfetch($res)) {
+	while ($row = DBfetch($res, false)) {
 		$links[] = [
-			'linkid' => (int) $row['linkid'],
-			'a'      => (int) $row['nodeida'],
-			'b'      => (int) $row['nodeidb']
+			'linkid'  => (int) $row['linkid'],
+			'a'       => (int) $row['nodeida'],
+			'b'       => (int) $row['nodeidb'],
+			'service' => $row['service'] !== null ? $row['service'] : '',
+			'proto'   => $row['proto'] !== null ? $row['proto'] : ''
 		];
 	}
 
@@ -428,39 +431,44 @@ if ($ajax && getRequest('mode') === 'ifaces') {
 		exit;
 	}
 
-	$neighbor_ids = [];
+	// one row per link, so parallel links to the same peer keep their own details
+	$neighbors = [];
+	$host_to_links = [];
 
 	foreach ($links as $l) {
-		if ($l['a'] === $nodeid) {
-			$neighbor_ids[] = $l['b'];
-		}
-		elseif ($l['b'] === $nodeid) {
-			$neighbor_ids[] = $l['a'];
-		}
-	}
+		$nid = $l['a'] === $nodeid ? $l['b'] : ($l['b'] === $nodeid ? $l['a'] : null);
 
-	$neighbors = [];
-	$host_to_node = [];
+		if ($nid === null) {
+			continue;
+		}
 
-	foreach (array_unique($neighbor_ids) as $nid) {
 		$n = $nodes[$nid] ?? null;
 
 		if ($n === null) {
 			continue;
 		}
 
-		$neighbors[$nid] = ['nodeid' => $nid, 'name' => $n['name'], 'ips' => []];
+		$neighbors[$l['linkid']] = [
+			'linkid'  => $l['linkid'],
+			'nodeid'  => $nid,
+			'name'    => $n['name'],
+			'ips'     => [],
+			'service' => $l['service'],
+			'proto'   => $l['proto']
+		];
 
 		if ($n['hostid'] !== null) {
-			$host_to_node[$n['hostid']] = $nid;
+			$host_to_links[$n['hostid']][] = $l['linkid'];
 		}
 	}
 
-	if ($host_to_node) {
-		$host_ips = topoHostIps($host_to_node);
+	if ($host_to_links) {
+		$host_ips = topoHostIps($host_to_links);
 
-		foreach ($host_to_node as $hid => $nid) {
-			$neighbors[$nid]['ips'] = $host_ips[$hid] ?? [];
+		foreach ($host_to_links as $hid => $linkids) {
+			foreach ($linkids as $lid) {
+				$neighbors[$lid]['ips'] = $host_ips[$hid] ?? [];
+			}
 		}
 	}
 
@@ -639,6 +647,27 @@ if ($ajax) {
 
 		DBexecute('DELETE FROM topo_link WHERE topo_linkid = '.$linkid);
 		$reply(true, _('Link deleted.'));
+	}
+
+	if ($mode === 'update_link') {
+		$linkid = (int) getRequest('linkid', 0);
+		$service = trim(getRequest('service', ''));
+		$proto = trim(getRequest('proto', ''));
+
+		if (mb_strlen($service) > 64 || mb_strlen($proto) > 32) {
+			$reply(false, _('Service or protocol text is too long.'));
+		}
+
+		if (!DBfetch(DBselect('SELECT topo_linkid FROM topo_link WHERE topo_linkid = '.$linkid))) {
+			$reply(false, _('The selected link was not found.'));
+		}
+
+		if (!DBexecute('UPDATE topo_link SET service = '.zbx_dbstr($service).', proto = '.zbx_dbstr($proto).
+				' WHERE topo_linkid = '.$linkid)) {
+			$reply(false, _('Database write failed (check the DB user privileges).'));
+		}
+
+		$reply(true, _('Link updated.'));
 	}
 
 	if ($mode === 'move') {
@@ -903,6 +932,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .ifcard .ifc-conn { padding: 5px 0 1px; font-size: 12px; }
 		.topo .ifcard .ifc-conn-name { color: var(--text); font-weight: 600; }
 		.topo .ifcard .ifc-conn-ips { color: #6fc3ff; font-size: 11px; margin-top: 1px; word-break: break-all; }
+		.topo .ifcard .ifc-conn-meta { color: #6fc3ff; font-size: 11px; margin-top: 1px; }
 		.topo .ifcard .ifc-gear { margin-left: auto; background: none; border: 0; color: var(--text-dim);
 			cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
 		.topo .ifcard .ifc-gear:hover { color: var(--accent); background: var(--accent-soft); }
@@ -1022,6 +1052,19 @@ header('Content-Type: text/html; charset=UTF-8');
 			</div>
 		</div>
 	</div>
+	<div class="tmodal-wrap" id="modal-link">
+		<div class="tmodal" role="dialog" aria-modal="true">
+			<h3><?= _('Link settings') ?></h3>
+			<label for="link-service"><?= _('Service') ?></label>
+			<input type="text" id="link-service" maxlength="64" placeholder="<?= _('e.g. HTTPS, SQL replication') ?>">
+			<label for="link-proto"><?= _('Protocol') ?></label>
+			<input type="text" id="link-proto" maxlength="32" placeholder="<?= _('e.g. TCP/443, UDP/161') ?>">
+			<div class="tmodal-btns">
+				<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-link"><?= _('Cancel') ?></button>
+				<button type="button" class="tbtn" id="btn-save-link"><?= _('Save') ?></button>
+			</div>
+		</div>
+	</div>
 <?php endif ?>
 
 	<div class="map-area">
@@ -1072,6 +1115,8 @@ const traffic = new Map(Object.entries(DATA.traffic || {}).map(([k, v]) => [+k, 
 let selectedId = null;
 
 const sevColor = s => s >= 0 ? SEV[s].c : OK_COLOR;
+
+const escHtml = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function fmtBps(v) {
 	if (!isFinite(v) || v <= 0) return '0 bps';
@@ -1230,6 +1275,20 @@ function drawLinks(boxes) {
 				'<circle r="1.8" fill="'+color+'" opacity=".55">' +
 				'<animateMotion dur="'+dur+'s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1"'+
 				' path="M'+p1.x+' '+p1.y+' L'+p2.x+' '+p2.y+'"/></circle>';
+		}
+
+		// service / protocol tag on the line itself, when set
+		const tag = [l.service, l.proto].filter(Boolean).join(' · ');
+
+		if (tag) {
+			const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+			const tw = tag.length * 6.2 + 14;
+			const to = selectedId !== null && !mine ? .15 : 1;
+
+			html += '<g opacity="'+to+'"><rect x="'+(mx - tw / 2)+'" y="'+(my - 10)+'" width="'+tw+
+				'" height="20" rx="10" fill="#101a2e" stroke="#2a3d5e"/>'+
+				'<text x="'+mx+'" y="'+(my + 3.5)+'" text-anchor="middle" font-size="10.5" fill="#b9d9f5">'+
+				escHtml(tag)+'</text></g>';
 		}
 
 		html += '<line class="link-hit" data-linkid="'+l.linkid+'" x1="'+p1.x+'" y1="'+p1.y+
@@ -1482,6 +1541,15 @@ async function openIfcard(n) {
 			nm.textContent = nb.name;
 			conn.appendChild(nm);
 
+			const meta = [nb.service, nb.proto].filter(Boolean).join(' · ');
+
+			if (meta) {
+				const md = document.createElement('div');
+				md.className = 'ifc-conn-meta mono';
+				md.textContent = meta;
+				conn.appendChild(md);
+			}
+
 			if (nb.ips && nb.ips.length) {
 				const im = document.createElement('div');
 				im.className = 'ifc-conn-ips mono';
@@ -1562,6 +1630,40 @@ document.getElementById('btn-cancel-settings')?.addEventListener('click', closeS
 
 document.getElementById('modal-settings')?.addEventListener('click', e => {
 	if (e.target === e.currentTarget) closeSettings();
+});
+
+// ---- link settings modal (admin) ----
+
+let linkEditId = null;
+
+function openLinkEditor(l) {
+	linkEditId = l.linkid;
+	document.getElementById('link-service').value = l.service || '';
+	document.getElementById('link-proto').value = l.proto || '';
+	document.getElementById('modal-link').classList.add('is-on');
+	document.getElementById('link-service').focus();
+}
+
+function closeLinkEditor() {
+	document.getElementById('modal-link')?.classList.remove('is-on');
+	linkEditId = null;
+}
+
+document.getElementById('btn-save-link')?.addEventListener('click', async () => {
+	const r = await post({
+		mode: 'update_link', linkid: linkEditId,
+		service: document.getElementById('link-service').value.trim(),
+		proto: document.getElementById('link-proto').value.trim()
+	});
+
+	if (r && r.ok) location.reload();
+	if (r && !r.ok) toast(r.msg);
+});
+
+document.getElementById('btn-cancel-link')?.addEventListener('click', closeLinkEditor);
+
+document.getElementById('modal-link')?.addEventListener('click', e => {
+	if (e.target === e.currentTarget) closeLinkEditor();
 });
 
 // ---- drag (admin) ----
@@ -1672,6 +1774,7 @@ document.getElementById('btn-link')?.addEventListener('click', () => setMode('li
 document.getElementById('btn-delete')?.addEventListener('click', () => setMode('delete'));
 document.addEventListener('keydown', e => {
 	if (e.key === 'Escape') {
+		closeLinkEditor();
 		closeSettings();
 		closeIfcard();
 		setMode(mode);
@@ -1682,6 +1785,20 @@ canvas.addEventListener('click', async e => {
 	if (suppressClick || e.target.closest('.ifcard')) return;
 
 	if (!mode) {
+		const hit = e.target.closest('.link-hit');
+
+		if (hit) {
+			closeIfcard();
+
+			const link = DATA.links.find(l => l.linkid === +hit.dataset.linkid);
+
+			if (link && DATA.is_admin) {
+				openLinkEditor(link);
+			}
+
+			return;
+		}
+
 		const nEl = e.target.closest('.node');
 		const n = nEl && nEl.classList.contains('is-dev') ? nodeById(+nEl.dataset.id) : null;
 
