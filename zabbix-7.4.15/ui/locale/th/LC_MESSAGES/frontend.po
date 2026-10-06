@@ -22522,3 +22522,9 @@ msgstr "ใส่ชื่ออุปกรณ์ก่อน"
 
 msgid "Connection failed — try again."
 msgstr "การเชื่อมต่อขัดข้อง ลองใหม่อีกครั้ง"
+
+msgid "Topology"
+msgstr "โทโพโลยี"
+
+msgid "Switch language"
+msgstr "สลับภาษา"

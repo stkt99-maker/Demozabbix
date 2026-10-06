@@ -162,7 +162,7 @@ class CMenuHelper {
 		// Custom hybrid topology page; future topology views can join this submenu.
 		$submenu_topology = [
 			!CWebUser::isGuest()
-				? (new CMenuItem(_('แผนผังเครือข่าย (Hybrid)')))
+				? (new CMenuItem(_('Network topology (Hybrid)')))
 					->setUrl(new CUrl('topo_tree.php'), 'topo_tree.php')
 				: null
 		];
