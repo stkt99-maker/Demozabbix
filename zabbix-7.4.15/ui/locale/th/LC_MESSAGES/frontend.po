@@ -22568,3 +22568,84 @@ msgstr "เช่น HTTPS, SQL Replication"
 msgid "e.g. TCP/443, UDP/161"
 msgstr "เช่น TCP/443, UDP/161"
 
+
+msgid "Network flows"
+msgstr "โฟลว์เครือข่าย"
+
+msgid "One-way paths traced over the map; packets run along the route in order."
+msgstr "เส้นทางทางเดียวที่ลากบนแผนผัง แพ็กเก็ตจะวิ่งตามลำดับที่กำหนด"
+
+msgid "New flow"
+msgstr "โฟลว์ใหม่"
+
+msgid "Click devices in packet order (1, 2, 3, …) to trace the route."
+msgstr "คลิกอุปกรณ์ตามลำดับที่แพ็กเก็ตวิ่ง (1, 2, 3, …) เพื่อกำหนดเส้นทาง"
+
+msgid "Recording — nodes in the path:"
+msgstr "กำลังบันทึก — โหนดในเส้นทาง:"
+
+msgid "Save flow"
+msgstr "บันทึกโฟลว์"
+
+msgid "Flow name"
+msgstr "ชื่อโฟลว์"
+
+msgid "e.g. Internet uplink, HR VLAN → Servers"
+msgstr "เช่น Internet uplink, HR VLAN → Servers"
+
+msgid "Enter a flow name first."
+msgstr "ใส่ชื่อโฟลว์ก่อน"
+
+msgid "Click at least two devices first."
+msgstr "คลิกอุปกรณ์อย่างน้อย 2 เครื่องก่อน"
+
+msgid "That device is already in the path."
+msgstr "อุปกรณ์นี้อยู่ในเส้นทางแล้ว"
+
+msgid "No flows yet."
+msgstr "ยังไม่มีโฟลว์"
+
+msgid "Delete flow \"%1$s\"?"
+msgstr "ลบโฟลว์ \"%1$s\"?"
+
+msgid "Flow on"
+msgstr "เปิด"
+
+msgid "Flow off"
+msgstr "ปิด"
+
+msgid "nodes"
+msgstr "โหนด"
+
+msgid "Flow name must be 1-64 characters."
+msgstr "ชื่อโฟลว์ต้องมี 1-64 ตัวอักษร"
+
+msgid "A flow needs at least two nodes."
+msgstr "โฟลว์ต้องมีอย่างน้อย 2 โหนด"
+
+msgid "A flow can have at most 32 nodes."
+msgstr "โฟลว์มีได้ไม่เกิน 32 โหนด"
+
+msgid "A flow cannot visit the same node twice."
+msgstr "โฟลว์ผ่านโหนดเดียวกันซ้ำไม่ได้"
+
+msgid "One of the nodes in the path no longer exists."
+msgstr "มีโหนดในเส้นทางที่ไม่มีอยู่แล้ว"
+
+msgid "Flow created."
+msgstr "สร้างโฟลว์แล้ว"
+
+msgid "The flow to delete was not found."
+msgstr "ไม่พบโฟลว์ที่ต้องการลบ"
+
+msgid "Flow deleted."
+msgstr "ลบโฟลว์แล้ว"
+
+msgid "The selected flow was not found."
+msgstr "ไม่พบโฟลว์ที่เลือก"
+
+msgid "Flow enabled."
+msgstr "เปิดโฟลว์แล้ว"
+
+msgid "Flow disabled."
+msgstr "ปิดโฟลว์แล้ว"

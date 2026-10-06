@@ -106,6 +106,47 @@ function topoLoad(): array {
 }
 
 /**
+ * Network flows: named one-way paths over the topology, each an ordered list
+ * of nodes the packets visit. Flows whose path collapsed below two nodes
+ * (after node deletions) are skipped.
+ */
+function topoFlows(): array {
+	// installs that have not run topo_flows.sql yet keep working, minus flows
+	if (!DBfetch(DBselect('SELECT 1 FROM information_schema.tables'.
+			' WHERE table_schema = \'public\' AND table_name = \'topo_flow\''))) {
+		return [];
+	}
+
+	$flows = [];
+	$res = DBselect('SELECT topo_flowid AS flowid, name, enabled FROM topo_flow ORDER BY topo_flowid');
+
+	while ($row = DBfetch($res, false)) {
+		$flows[(int) $row['flowid']] = [
+			'flowid'  => (int) $row['flowid'],
+			'name'    => $row['name'],
+			'enabled' => (int) $row['enabled'] ? 1 : 0,
+			'hops'    => []
+		];
+	}
+
+	if ($flows) {
+		$res = DBselect('SELECT topo_flowid, seq, nodeid FROM topo_flow_hop ORDER BY topo_flowid, seq');
+
+		while ($row = DBfetch($res)) {
+			$flowid = (int) $row['topo_flowid'];
+
+			if (isset($flows[$flowid])) {
+				$flows[$flowid]['hops'][] = (int) $row['nodeid'];
+			}
+		}
+	}
+
+	return array_values(array_filter($flows, static function (array $f): bool {
+		return count($f['hops']) >= 2;
+	}));
+}
+
+/**
  * Worst active-problem severity per node. Groups roll up their members.
  * Severity -1 means "no open problems".
  */
@@ -679,6 +720,12 @@ if ($ajax) {
 		// Ungroup members first so deleting a group keeps its devices on the canvas.
 		DBexecute('UPDATE topo_node SET parentid = NULL WHERE parentid = '.$nodeid);
 		DBexecute('DELETE FROM topo_node WHERE topo_nodeid = '.$nodeid);
+
+		// topo_flow_hop rows for the deleted node are gone (FK cascade); drop flows
+		// whose path fell below two nodes and would not be drawable any more.
+		DBexecute('DELETE FROM topo_flow f WHERE ('.
+			'SELECT COUNT(*) FROM topo_flow_hop h WHERE h.topo_flowid = f.topo_flowid) < 2');
+
 		$reply(true, _('Node deleted.'));
 	}
 
@@ -710,6 +757,71 @@ if ($ajax) {
 		$reply(true, _('Link updated.'));
 	}
 
+	if ($mode === 'flow_create') {
+		$name = trim(getRequest('name', ''));
+		$hops = array_values(array_filter(array_map('intval', explode(',', getRequest('hops', '')))));
+
+		if ($name === '' || mb_strlen($name) > 64) {
+			$reply(false, _('Flow name must be 1-64 characters.'));
+		}
+
+		if (count($hops) < 2) {
+			$reply(false, _('A flow needs at least two nodes.'));
+		}
+
+		if (count($hops) > 32) {
+			$reply(false, _('A flow can have at most 32 nodes.'));
+		}
+
+		if (count($hops) !== count(array_unique($hops))) {
+			$reply(false, _('A flow cannot visit the same node twice.'));
+		}
+
+		$known = DBfetch(DBselect('SELECT COUNT(*) AS cnt FROM topo_node'.
+				' WHERE topo_nodeid IN ('.implode(',', $hops).')'));
+
+		if ($known === false || (int) $known['cnt'] !== count($hops)) {
+			$reply(false, _('One of the nodes in the path no longer exists.'));
+		}
+
+		$new = DBfetch(DBselect('INSERT INTO topo_flow (name) VALUES ('.zbx_dbstr($name).') RETURNING topo_flowid'));
+
+		if ($new === false) {
+			$reply(false, _('Database write failed (check the DB user privileges).'));
+		}
+
+		$flowid = (int) $new['topo_flowid'];
+
+		foreach ($hops as $seq => $nodeid) {
+			DBexecute('INSERT INTO topo_flow_hop (topo_flowid, seq, nodeid) VALUES ('.$flowid.', '.$seq.', '.$nodeid.')');
+		}
+
+		$reply(true, _('Flow created.'));
+	}
+
+	if ($mode === 'flow_delete') {
+		$flowid = (int) getRequest('flowid', 0);
+
+		if (!DBfetch(DBselect('SELECT topo_flowid FROM topo_flow WHERE topo_flowid = '.$flowid))) {
+			$reply(false, _('The flow to delete was not found.'));
+		}
+
+		DBexecute('DELETE FROM topo_flow WHERE topo_flowid = '.$flowid);
+		$reply(true, _('Flow deleted.'));
+	}
+
+	if ($mode === 'flow_toggle') {
+		$flowid = (int) getRequest('flowid', 0);
+		$enabled = getRequest('enabled', '') === '1' ? 1 : 0;
+
+		if (!DBfetch(DBselect('SELECT topo_flowid FROM topo_flow WHERE topo_flowid = '.$flowid))) {
+			$reply(false, _('The selected flow was not found.'));
+		}
+
+		DBexecute('UPDATE topo_flow SET enabled = '.$enabled.' WHERE topo_flowid = '.$flowid);
+		$reply(true, $enabled ? _('Flow enabled.') : _('Flow disabled.'));
+	}
+
 	if ($mode === 'move') {
 		$nodeid = (int) getRequest('nodeid', 0);
 		$x = max(0, (int) getRequest('x', 0));
@@ -724,6 +836,7 @@ if ($ajax) {
 
 [$nodes, $links] = topoLoad();
 $statuses = topoStatuses($nodes);
+$flows = topoFlows();
 
 // Hosts for the "add device" picker (Super admin only).
 $hosts = $is_admin
@@ -777,12 +890,31 @@ $i18n = [
 	'src_selected' => _('Source selected — click the destination node.'),
 	'enter_group_name' => _('Enter a group name first.'),
 	'enter_device_name' => _('Enter a device name first.'),
-	'conn_failed' => _('Connection failed — try again.')
+	'conn_failed' => _('Connection failed — try again.'),
+	'flows' => _('Network flows'),
+	'flows_sub' => _('One-way paths traced over the map; packets run along the route in order.'),
+	'new_flow' => _('New flow'),
+	'flow_hint' => _('Click devices in packet order (1, 2, 3, …) to trace the route.'),
+	'flow_recording' => _('Recording — nodes in the path:'),
+	'save_flow' => _('Save flow'),
+	'flow_name' => _('Flow name'),
+	'flow_name_ph' => _('e.g. Internet uplink, HR VLAN → Servers'),
+	'flow_name_needed' => _('Enter a flow name first.'),
+	'flow_needs_two' => _('Click at least two devices first.'),
+	'flow_dupe' => _('That device is already in the path.'),
+	'no_flows' => _('No flows yet.'),
+	'confirm_delete_flow' => _('Delete flow "%1$s"?'),
+	'delete_lbl' => _('Delete'),
+	// custom msgids: upstream translates "On" as "บน" (position), not a toggle state
+	'on_lbl' => _('Flow on'),
+	'off_lbl' => _('Flow off'),
+	'nodes_unit' => _('nodes')
 ];
 
 $data = [
 	'nodes' => array_values($nodes),
 	'links' => $links,
+	'flows' => $flows,
 	'statuses' => $statuses,
 	'traffic' => topoTraffic($nodes),
 	'host_names' => $host_names,
@@ -857,6 +989,38 @@ header('Content-Type: text/html; charset=UTF-8');
 			box-shadow: 0 0 0 3px rgba(228, 89, 89, .16), inset 0 0 12px rgba(228, 89, 89, .08); }
 		.topo .tbtn:disabled { opacity: .45; cursor: not-allowed; }
 
+		/* ---- flows panel ---- */
+		.topo .flows-head { display: flex; align-items: flex-start; gap: 14px; width: 100%; }
+		.topo .flows-head label { margin-bottom: 2px; font-size: 13px; color: var(--text); font-weight: 700; }
+		.topo .flows-sub { font-size: 12px; color: var(--text-dim); }
+		.topo .flows-head .tbtn { margin-left: auto; }
+		.topo .flows-rec { width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+			border: 1px dashed rgba(63, 162, 255, .55); border-radius: 10px; padding: 9px 12px;
+			background: var(--accent-soft); }
+		.topo .flows-rec[hidden] { display: none; }
+		.topo .flows-rec-text { font-size: 12.5px; color: var(--text); white-space: nowrap; }
+		.topo .flows-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 160px; }
+		.topo .flows-chips .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px;
+			background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 3px 9px;
+			color: var(--text); }
+		.topo .flows-chips .chip b { color: #6fc3ff; }
+		.topo .flows-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+		.topo .flowrow { display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+			background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 10px; }
+		.topo .flowrow .fdot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+		.topo .flowrow .fname { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+			white-space: nowrap; }
+		.topo .flowrow .fcount { color: var(--text-dim); font-size: 11.5px; flex: 1; white-space: nowrap;
+			overflow: hidden; text-overflow: ellipsis; }
+		.topo .flowrow .fbtn { background: none; border: 1px solid var(--line); color: #b9c9de; cursor: pointer;
+			font-size: 12px; border-radius: 7px; padding: 4px 10px; font-family: inherit; white-space: nowrap; }
+		.topo .flowrow .fbtn.is-on { color: var(--ok); border-color: rgba(56, 209, 126, .45); }
+		.topo .flowrow .fbtn.is-off { color: var(--text-dim); }
+		.topo .flowrow .fbtn:hover { border-color: var(--accent); }
+		.topo .flowrow .fdel { background: none; border: 0; color: var(--text-dim); cursor: pointer;
+			font-size: 14px; padding: 2px 6px; border-radius: 6px; }
+		.topo .flowrow .fdel:hover { color: var(--danger); background: rgba(228, 89, 89, .12); }
+
 		/* ---- add panels ---- */
 		.topo .panel { background: var(--surface); border-bottom: 1px solid var(--line-soft);
 			padding: 14px 18px; display: none; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
@@ -885,8 +1049,10 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .viewport::-webkit-scrollbar-track { background: transparent; }
 		.topo .canvas.is-linkmode { cursor: crosshair; }
 		.topo .canvas.is-delmode { cursor: not-allowed; }
+		.topo .canvas.is-flowmode { cursor: crosshair; }
 		.topo .canvas.is-linkmode .node, .topo .canvas.is-delmode .node,
-		.topo .canvas.is-linkmode .gbox, .topo .canvas.is-delmode .gbox { cursor: crosshair; }
+		.topo .canvas.is-linkmode .gbox, .topo .canvas.is-delmode .gbox,
+		.topo .canvas.is-flowmode .node, .topo .canvas.is-flowmode .gbox { cursor: crosshair; }
 		.topo .canvas.is-delmode .gbox { cursor: not-allowed; }
 
 		.topo svg.links { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
@@ -1033,6 +1199,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		<button type="button" class="tbtn tbtn-ghost" id="btn-autolink" title="<?= _('Link by relationship: same subnets + a star around the Zabbix server.') ?>"><?= _('Auto-link') ?></button>
 		<button type="button" class="tbtn tbtn-ghost" id="btn-link"><?= _('Link mode') ?></button>
 		<button type="button" class="tbtn tbtn-ghost is-danger" id="btn-delete"><?= _('Delete mode') ?></button>
+		<button type="button" class="tbtn tbtn-ghost" id="btn-flows"><?= _('Network flows') ?></button>
 <?php else: ?>
 		<span class="sub" style="padding: 4px 10px; border: 1px solid var(--line-soft); border-radius: 8px;">
 			<?= _('View only — only Super admins can edit.') ?></span>
@@ -1071,6 +1238,22 @@ header('Content-Type: text/html; charset=UTF-8');
 		<button type="button" class="tbtn" id="btn-save-device"><?= _('Save') ?></button>
 		<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-device"><?= _('Cancel') ?></button>
 	</div>
+	<div class="panel" id="panel-flows">
+		<div class="flows-head">
+			<div>
+				<label><?= _('Network flows') ?></label>
+				<div class="flows-sub"><?= _('One-way paths traced over the map; packets run along the route in order.') ?></div>
+			</div>
+			<button type="button" class="tbtn" id="btn-flow-new"><?= _('New flow') ?></button>
+		</div>
+		<div class="flows-rec" id="flows-rec" hidden>
+			<span class="flows-rec-text"><?= _('Recording — nodes in the path:') ?></span>
+			<div class="flows-chips" id="flows-chips"></div>
+			<button type="button" class="tbtn" id="btn-flow-save"><?= _('Save flow') ?></button>
+			<button type="button" class="tbtn tbtn-ghost" id="btn-flow-cancel"><?= _('Cancel') ?></button>
+		</div>
+		<div class="flows-list" id="flows-list"></div>
+	</div>
 	<div class="tmodal-wrap" id="modal-settings">
 		<div class="tmodal" role="dialog" aria-modal="true">
 			<h3><?= _('Device settings') ?></h3>
@@ -1102,6 +1285,17 @@ header('Content-Type: text/html; charset=UTF-8');
 			<div class="tmodal-btns">
 				<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-link"><?= _('Cancel') ?></button>
 				<button type="button" class="tbtn" id="btn-save-link"><?= _('Save') ?></button>
+			</div>
+		</div>
+	</div>
+	<div class="tmodal-wrap" id="modal-flow">
+		<div class="tmodal" role="dialog" aria-modal="true">
+			<h3><?= _('Save flow') ?></h3>
+			<label for="flow-name"><?= _('Flow name') ?></label>
+			<input type="text" id="flow-name" maxlength="64" placeholder="<?= _('e.g. Internet uplink, HR VLAN → Servers') ?>">
+			<div class="tmodal-btns">
+				<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-flow"><?= _('Cancel') ?></button>
+				<button type="button" class="tbtn" id="btn-save-flow"><?= _('Save') ?></button>
 			</div>
 		</div>
 	</div>
@@ -1150,6 +1344,12 @@ const viewport = document.getElementById('viewport');
 const nodes = new Map(DATA.nodes.map(n => [n.nodeid, n]));
 const statuses = new Map(Object.entries(DATA.statuses).map(([k, v]) => [+k, v]));
 const traffic = new Map(Object.entries(DATA.traffic || {}).map(([k, v]) => [+k, v]));
+// named one-way paths over the map; color index follows the load order and
+// stays stable while toggling/deleting other flows in place
+const FLOW_COLORS = ['#4dd0e1', '#b388ff', '#ffb74d', '#f06292', '#aed581', '#9575cd', '#4fc3f7', '#ffd54f'];
+const flows = DATA.flows.map((f, i) => Object.assign({}, f, {color: FLOW_COLORS[i % FLOW_COLORS.length]}));
+// node ids of the flow being recorded, or null when not recording
+let flowDraft = null;
 // device currently clicked (drives link highlighting); declared early because
 // drawLinks runs during the first render, before the ifcard section appears
 let selectedId = null;
@@ -1213,6 +1413,117 @@ function anchorOf(n, boxes) {
 	return box
 		? {x: box.x + box.w / 2, y: box.y + box.h / 2}
 		: {x: n.posx + CHIP_W / 2, y: n.posy + CHIP_H / 2};
+}
+
+// ---- flows on the canvas ----
+
+// one-way triangle at the middle of a segment — the line runs center-to-center
+// under the node cards, so the midpoint is always visible
+function flowArrow(p1, p2, color, alpha) {
+	const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+	const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2, s = 8;
+	const tip = [mx + Math.cos(ang) * s, my + Math.sin(ang) * s];
+	const b1 = [mx + Math.cos(ang + 2.6) * s * .82, my + Math.sin(ang + 2.6) * s * .82];
+	const b2 = [mx + Math.cos(ang - 2.6) * s * .82, my + Math.sin(ang - 2.6) * s * .82];
+
+	return '<polygon points="'+[tip, b1, b2].map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')+
+		'" fill="'+color+'" opacity="'+alpha+'"/>';
+}
+
+// sequence badge pinned to the node's top-left corner: 1, 2, 3, … along the path
+function flowBadge(n, boxes, num, color, alpha) {
+	const box = boxes[n.nodeid];
+	const cx = (box ? box.x : n.posx) - 2, cy = (box ? box.y : n.posy) - 2;
+
+	return '<g opacity="'+alpha+'"><circle cx="'+cx+'" cy="'+cy+'" r="10.5" fill="'+color+
+		'" stroke="#0a1122" stroke-width="1.5"/>'+
+		'<text x="'+cx+'" y="'+(cy + 4)+'" text-anchor="middle" font-size="11.5" font-weight="700"'+
+		' fill="#0a1122">'+num+'</text></g>';
+}
+
+function flowPoints(ids, boxes) {
+	const pts = [];
+
+	for (const id of ids) {
+		const n = nodeById(id);
+		if (n) pts.push(anchorOf(n, boxes));
+	}
+
+	return pts;
+}
+
+function flowPathOf(pts) {
+	return 'M' + pts.map(p => p.x + ' ' + p.y).join(' L');
+}
+
+function flowsSvg(boxes) {
+	let html = '';
+
+	for (const f of flows) {
+		if (!f.enabled) continue;
+
+		const pts = flowPoints(f.hops, boxes);
+		if (pts.length < 2) continue;
+
+		// when a device is selected, flows it is not part of fade like links do
+		const mine = selectedId === null || f.hops.includes(selectedId);
+		const alpha = selectedId === null ? .92 : mine ? 1 : .1;
+		const path = flowPathOf(pts);
+
+		let len = 0;
+
+		for (let i = 1; i < pts.length; i++) {
+			len += Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
+		}
+
+		html += '<path d="'+path+'" fill="none" stroke="'+f.color+'" stroke-width="9" opacity="'+
+			(alpha * .16).toFixed(3)+'" stroke-linecap="round" stroke-linejoin="round"/>'+
+			'<path d="'+path+'" fill="none" stroke="'+f.color+'" stroke-width="2.4" opacity="'+alpha+
+			'" stroke-linecap="round" stroke-linejoin="round"/>';
+
+		for (let i = 1; i < pts.length; i++) {
+			html += flowArrow(pts[i-1], pts[i], f.color, alpha);
+		}
+
+		f.hops.forEach((id, i) => {
+			const n = nodeById(id);
+			if (n) html += flowBadge(n, boxes, i + 1, f.color, alpha);
+		});
+
+		// packets loop the route strictly forward — the animation just restarts at hop 1
+		if (MOTION && len > 60) {
+			const dur = Math.max(3, len / 110).toFixed(2);
+
+			html += '<circle r="3.2" fill="#fff" stroke="'+f.color+'" stroke-width="1.4" opacity="'+alpha+'">'+
+				'<animateMotion dur="'+dur+'s" repeatCount="indefinite" path="'+path+'"/></circle>'+
+				'<circle r="2.6" fill="'+f.color+'" opacity="'+(alpha * .8).toFixed(2)+'">'+
+				'<animateMotion dur="'+dur+'s" begin="-'+(dur / 2).toFixed(2)+
+				's" repeatCount="indefinite" path="'+path+'"/></circle>';
+		}
+	}
+
+	// the path being recorded right now: dashed accent line with live numbering
+	if (flowDraft && flowDraft.length) {
+		const pts = flowPoints(flowDraft, boxes);
+
+		if (pts.length >= 2) {
+			const path = flowPathOf(pts);
+
+			html += '<path d="'+path+'" fill="none" stroke="#3fa2ff" stroke-width="2.6" opacity=".95"'+
+				' stroke-dasharray="8 7" stroke-linecap="round" stroke-linejoin="round"/>';
+
+			for (let i = 1; i < pts.length; i++) {
+				html += flowArrow(pts[i-1], pts[i], '#3fa2ff', 1);
+			}
+		}
+
+		flowDraft.forEach((id, i) => {
+			const n = nodeById(id);
+			if (n) html += flowBadge(n, boxes, i + 1, '#3fa2ff', 1);
+		});
+	}
+
+	return html;
 }
 
 // ---- rendering ----
@@ -1341,6 +1652,8 @@ function drawLinks(boxes) {
 		html += '<line class="link-hit" data-linkid="'+l.linkid+'" x1="'+p1.x+'" y1="'+p1.y+
 			'" x2="'+p2.x+'" y2="'+p2.y+'"/>';
 	}
+
+	html += flowsSvg(boxes);
 
 	svg.innerHTML = html;
 }
@@ -1718,6 +2031,173 @@ document.getElementById('modal-link')?.addEventListener('click', e => {
 	if (e.target === e.currentTarget) closeLinkEditor();
 });
 
+// ---- network flows panel (admin) ----
+
+function renderFlowsList() {
+	const wrap = document.getElementById('flows-list');
+
+	if (!wrap) return;
+
+	wrap.textContent = '';
+
+	if (!flows.length) {
+		const note = document.createElement('div');
+		note.className = 'flowrow';
+		note.style.color = 'var(--text-dim)';
+		note.style.fontSize = '12px';
+		note.textContent = T.no_flows;
+		wrap.appendChild(note);
+		return;
+	}
+
+	for (const f of flows) {
+		const row = document.createElement('div');
+		row.className = 'flowrow';
+
+		const dot = document.createElement('span');
+		dot.className = 'fdot';
+		dot.style.background = f.color;
+		dot.style.boxShadow = '0 0 8px ' + f.color + '66';
+
+		const name = document.createElement('span');
+		name.className = 'fname';
+		name.textContent = f.name;
+
+		const count = document.createElement('span');
+		count.className = 'fcount mono';
+		count.textContent = f.hops.length + ' ' + T.nodes_unit;
+
+		const tog = document.createElement('button');
+		tog.type = 'button';
+		tog.className = 'fbtn ' + (f.enabled ? 'is-on' : 'is-off');
+		tog.textContent = f.enabled ? T.on_lbl : T.off_lbl;
+		tog.addEventListener('click', async () => {
+			const r = await post({mode: 'flow_toggle', flowid: f.flowid, enabled: f.enabled ? 0 : 1});
+
+			if (r && r.ok) {
+				f.enabled = f.enabled ? 0 : 1;
+				renderFlowsList();
+				updateGeometry();
+				toast(r.msg);
+			}
+			else if (r) {
+				toast(r.msg);
+			}
+		});
+
+		const del = document.createElement('button');
+		del.type = 'button';
+		del.className = 'fdel';
+		del.title = T.delete_lbl;
+		del.textContent = '✕';
+		del.addEventListener('click', async () => {
+			if (!confirm(T.confirm_delete_flow.replace('%1$s', f.name))) return;
+
+			const r = await post({mode: 'flow_delete', flowid: f.flowid});
+
+			if (r && r.ok) {
+				flows.splice(flows.indexOf(f), 1);
+				renderFlowsList();
+				updateGeometry();
+				toast(r.msg);
+			}
+			else if (r) {
+				toast(r.msg);
+			}
+		});
+
+		row.append(dot, name, count, tog, del);
+		wrap.appendChild(row);
+	}
+}
+
+// live chip list of the path being recorded
+function renderFlowDraft() {
+	const rec = document.getElementById('flows-rec');
+
+	if (!rec) return;
+
+	rec.hidden = flowDraft === null;
+
+	const chips = document.getElementById('flows-chips');
+	chips.textContent = '';
+
+	if (flowDraft) {
+		flowDraft.forEach((id, i) => {
+			const n = nodeById(id);
+			const chip = document.createElement('span');
+			chip.className = 'chip';
+			const num = document.createElement('b');
+			num.textContent = (i + 1) + '.';
+			chip.append(num, document.createTextNode(n ? n.name : '?'));
+			chips.appendChild(chip);
+		});
+	}
+}
+
+function startFlowDraft() {
+	setMode(null);
+	closeIfcard();
+	flowDraft = [];
+	canvas.classList.add('is-flowmode');
+	renderFlowDraft();
+	toast(T.flow_hint);
+}
+
+function cancelFlowDraft() {
+	if (flowDraft === null) return;
+
+	flowDraft = null;
+	canvas.classList.remove('is-flowmode');
+	renderFlowDraft();
+	updateGeometry();
+}
+
+document.getElementById('btn-flows')?.addEventListener('click', () => {
+	renderFlowsList();
+	openPanel('panel-flows');
+});
+
+document.getElementById('btn-flow-new')?.addEventListener('click', () => {
+	if (flowDraft !== null) {
+		cancelFlowDraft();
+		return;
+	}
+
+	startFlowDraft();
+});
+
+document.getElementById('btn-flow-cancel')?.addEventListener('click', cancelFlowDraft);
+
+document.getElementById('btn-flow-save')?.addEventListener('click', () => {
+	if (!flowDraft || flowDraft.length < 2) return toast(T.flow_needs_two);
+
+	document.getElementById('flow-name').value = '';
+	document.getElementById('modal-flow').classList.add('is-on');
+	document.getElementById('flow-name').focus();
+});
+
+function closeFlowModal() {
+	document.getElementById('modal-flow')?.classList.remove('is-on');
+}
+
+document.getElementById('btn-cancel-flow')?.addEventListener('click', closeFlowModal);
+
+document.getElementById('modal-flow')?.addEventListener('click', e => {
+	if (e.target === e.currentTarget) closeFlowModal();
+});
+
+document.getElementById('btn-save-flow')?.addEventListener('click', async () => {
+	const name = document.getElementById('flow-name').value.trim();
+
+	if (!name) return toast(T.flow_name_needed);
+
+	const r = await post({mode: 'flow_create', name, hops: flowDraft.join(',')});
+
+	if (r && r.ok) location.reload();
+	if (r && !r.ok) toast(r.msg);
+});
+
 // ---- drag (admin) ----
 
 let drag = null;
@@ -1810,6 +2290,7 @@ let mode = null, linkSrc = null;
 function setMode(next) {
 	mode = mode === next ? null : next;
 	linkSrc = null;
+	cancelFlowDraft();
 	closeIfcard();
 
 	document.getElementById('btn-link')?.classList.toggle('is-active', mode === 'link');
@@ -1828,13 +2309,35 @@ document.addEventListener('keydown', e => {
 	if (e.key === 'Escape') {
 		closeLinkEditor();
 		closeSettings();
+		closeFlowModal();
 		closeIfcard();
+		cancelFlowDraft();
 		setMode(mode);
 	}
 });
 
 canvas.addEventListener('click', async e => {
 	if (suppressClick || e.target.closest('.ifcard')) return;
+
+	// recording a flow: every clicked node joins the path in click order
+	if (flowDraft !== null) {
+		const nEl = e.target.closest('.node');
+
+		if (nEl && DATA.is_admin) {
+			const id = +nEl.dataset.id;
+
+			if (flowDraft.includes(id)) {
+				toast(T.flow_dupe);
+			}
+			else {
+				flowDraft.push(id);
+				renderFlowDraft();
+				updateGeometry();
+			}
+		}
+
+		return;
+	}
 
 	if (!mode) {
 		const hit = e.target.closest('.link-hit');
