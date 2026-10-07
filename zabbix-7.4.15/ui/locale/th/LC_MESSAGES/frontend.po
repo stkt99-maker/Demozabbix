@@ -22688,3 +22688,60 @@ msgstr "ไม่มีปัญหาที่เปิดอยู่"
 
 msgid "Current problems"
 msgstr "ปัญหาที่กำลังเกิดขึ้น"
+
+msgid "Service name must be 1-64 characters."
+msgstr "ชื่อบริการต้องมี 1-64 ตัวอักษร"
+
+msgid "A service with this name already exists."
+msgstr "มีบริการชื่อนี้อยู่แล้ว"
+
+msgid "A service cannot depend on itself."
+msgstr "บริการไม่สามารถขึ้นอยู่กับตัวเองได้"
+
+msgid "Too many dependencies (max 64)."
+msgstr "รายการที่ขึ้นอยู่มีมากเกินไป (สูงสุด 64)"
+
+msgid "One of the selected items no longer exists."
+msgstr "รายการที่เลือกบางรายการไม่มีอยู่แล้ว"
+
+msgid "That dependency would create a circular chain."
+msgstr "การขึ้นอยู่นี้จะสร้างวงวนไม่ได้"
+
+msgid "The selected service was not found."
+msgstr "ไม่พบบริการที่เลือก"
+
+msgid "The service to delete was not found."
+msgstr "ไม่พบบริการที่ต้องการลบ"
+
+msgid "Service created."
+msgstr "สร้างบริการแล้ว"
+
+msgid "Service saved."
+msgstr "บันทึกบริการแล้ว"
+
+msgid "Service deleted."
+msgstr "ลบบริการแล้ว"
+
+msgid "e.g. Email, ERP, CCTV"
+msgstr "เช่น อีเมล, ERP, กล้องวงจรปิด"
+
+msgid "Devices and groups"
+msgstr "อุปกรณ์และกลุ่ม"
+
+msgid "Other services"
+msgstr "บริการอื่น ๆ"
+
+msgid "Service settings"
+msgstr "ตั้งค่าบริการ"
+
+msgid "Enter a service name first."
+msgstr "กรอกชื่อบริการก่อน"
+
+msgid "Delete service \"%1$s\"?"
+msgstr "ลบบริการ \"%1$s\"?"
+
+msgid "No dependencies."
+msgstr "ไม่มีรายการที่ขึ้นอยู่"
+
+msgid "No services yet."
+msgstr "ยังไม่มีบริการ"

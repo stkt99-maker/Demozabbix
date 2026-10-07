@@ -419,6 +419,274 @@ function topoProblems(array $hostids): array {
 }
 
 /**
+ * Business services and their dependency edges. A service leans on topology
+ * nodes ("n") and/or other services ("s"); its status is the worst severity
+ * in the whole tree below it. Installs without topo_services.sql keep working.
+ */
+function topoServices(): array {
+	// installs that have not run topo_services.sql yet keep working, minus services
+	if (!DBfetch(DBselect('SELECT 1 FROM information_schema.tables'.
+			' WHERE table_schema = \'public\' AND table_name = \'topo_service\''))) {
+		return [];
+	}
+
+	$services = [];
+	$res = DBselect('SELECT topo_serviceid AS serviceid, name FROM topo_service ORDER BY topo_serviceid');
+
+	while ($row = DBfetch($res)) {
+		$services[(int) $row['serviceid']] = [
+			'serviceid' => (int) $row['serviceid'],
+			'name'      => $row['name'],
+			'deps'      => []
+		];
+	}
+
+	if ($services) {
+		// DBfetch($res, false): both dep columns are nullable — keep real NULLs
+		$res = DBselect('SELECT serviceid, dep_serviceid, nodeid FROM topo_service_dep'.
+				' ORDER BY serviceid, COALESCE(dep_serviceid, nodeid)');
+
+		while ($row = DBfetch($res, false)) {
+			$sid = (int) $row['serviceid'];
+
+			if (!isset($services[$sid])) {
+				continue;
+			}
+
+			if ($row['dep_serviceid'] !== null) {
+				$services[$sid]['deps'][] = ['t' => 's', 'id' => (int) $row['dep_serviceid']];
+			}
+			elseif ($row['nodeid'] !== null) {
+				$services[$sid]['deps'][] = ['t' => 'n', 'id' => (int) $row['nodeid']];
+			}
+		}
+	}
+
+	return $services;
+}
+
+/**
+ * Worst severity across each service's whole dependency tree. Nodes contribute
+ * their rolled-up status (a group stands for all its members); a dependency on
+ * another service pulls that service's roll-up in. Cycles are cut, not fatal.
+ */
+function topoServiceStatuses(array $services, array $node_status): array {
+	$memo = [];
+	$visiting = [];
+
+	$calc = static function (int $sid) use (&$calc, $services, $node_status, &$memo, &$visiting): array {
+		if (array_key_exists($sid, $memo)) {
+			return $memo[$sid];
+		}
+
+		if (isset($visiting[$sid])) {
+			return ['sev' => -1, 'cnt' => 0]; // cycle: ignore this branch
+		}
+
+		$visiting[$sid] = true;
+		$sev = -1;
+		$cnt = 0;
+
+		foreach ($services[$sid]['deps'] as $dep) {
+			if ($dep['t'] === 's') {
+				if (isset($services[$dep['id']])) {
+					$st = $calc($dep['id']);
+					$sev = max($sev, $st['sev']);
+					$cnt += $st['cnt'];
+				}
+			}
+			elseif (isset($node_status[$dep['id']])) {
+				$st = $node_status[$dep['id']];
+				$sev = max($sev, $st['sev']);
+				$cnt += $st['cnt'];
+			}
+		}
+
+		unset($visiting[$sid]);
+
+		return $memo[$sid] = ['sev' => $sev, 'cnt' => $cnt];
+	};
+
+	$out = [];
+
+	foreach (array_keys($services) as $sid) {
+		$out[$sid] = $calc($sid);
+	}
+
+	return $out;
+}
+
+/**
+ * nodeid => the headline (worst, then newest) open problem of the device's
+ * host — the last step of a root-cause chain. Only devices that currently
+ * have problems are queried.
+ */
+function topoWorstProblems(array $nodes, array $node_status): array {
+	$host_to_node = [];
+
+	foreach ($nodes as $node) {
+		if ($node['type'] === 'device' && $node['hostid'] !== null
+				&& isset($node_status[$node['nodeid']]) && $node_status[$node['nodeid']]['sev'] >= 0) {
+			$host_to_node[$node['hostid']] = $node['nodeid'];
+		}
+	}
+
+	if (!$host_to_node) {
+		return [];
+	}
+
+	$out = [];
+	$res = DBselect('SELECT DISTINCT ON (i.hostid) i.hostid, p.name AS pname, p.severity'.
+			' FROM problem p JOIN functions f ON f.triggerid = p.objectid'.
+			' JOIN items i ON i.itemid = f.itemid'.
+			' WHERE i.hostid IN ('.implode(',', array_map('intval', array_keys($host_to_node))).')'.
+			' AND p.r_eventid IS NULL'.
+			' ORDER BY i.hostid, p.severity DESC, p.clock DESC');
+
+	while ($row = DBfetch($res)) {
+		$nid = $host_to_node[(int) $row['hostid']] ?? null;
+
+		if ($nid !== null) {
+			$out[$nid] = ['name' => $row['pname'], 'sev' => (int) $row['severity']];
+		}
+	}
+
+	return $out;
+}
+
+/**
+ * The worst path from a service down to the problem behind its status:
+ * Email ← Mail relay ← "High CPU utilization". Each step keeps what it points
+ * at (node / service / problem) so the card can deep-link the walk. Empty for
+ * a healthy service.
+ */
+function topoServiceChain(int $sid, array $services, array $nodes, array $node_status,
+		array $svc_status, array $worst_problem): array {
+
+	$chain = [];
+	$seen = [];
+	$cur = ['t' => 's', 'id' => $sid];
+
+	while (true) {
+		if ($cur['t'] === 's') {
+			if (!isset($services[$cur['id']]) || isset($seen['s'.$cur['id']])) {
+				break;
+			}
+
+			$seen['s'.$cur['id']] = true;
+			$best = null;
+
+			foreach ($services[$cur['id']]['deps'] as $dep) {
+				$st = $dep['t'] === 's'
+					? ($svc_status[$dep['id']] ?? null)
+					: ($node_status[$dep['id']] ?? null);
+
+				if ($st === null
+						|| ($best !== null && ($st['sev'] < $best['st']['sev']
+							|| ($st['sev'] === $best['st']['sev'] && $st['cnt'] <= $best['st']['cnt'])))) {
+					continue;
+				}
+
+				$best = ['dep' => $dep, 'st' => $st];
+			}
+
+			if ($best === null || $best['st']['sev'] < 0) {
+				break;
+			}
+
+			$dep = $best['dep'];
+			$chain[] = [
+				'name' => $dep['t'] === 's' ? $services[$dep['id']]['name'] : $nodes[$dep['id']]['name'],
+				'sev'  => $best['st']['sev'],
+				't'    => $dep['t'],
+				'id'   => $dep['id']
+			];
+			$cur = $dep;
+		}
+		else {
+			$node = $nodes[$cur['id']] ?? null;
+
+			if ($node === null || isset($seen['n'.$cur['id']])) {
+				break;
+			}
+
+			$seen['n'.$cur['id']] = true;
+
+			if ($node['type'] === 'group') {
+				// a group stands for its members — keep walking into the worst one
+				$best = null;
+
+				foreach ($nodes as $m) {
+					if ($m['type'] !== 'device' || $m['parentid'] !== $node['nodeid']) {
+						continue;
+					}
+
+					$st = $node_status[$m['nodeid']] ?? null;
+
+					if ($st === null
+							|| ($best !== null && ($st['sev'] < $best['st']['sev']
+								|| ($st['sev'] === $best['st']['sev'] && $st['cnt'] <= $best['st']['cnt'])))) {
+						continue;
+					}
+
+					$best = ['dep' => ['t' => 'n', 'id' => $m['nodeid']], 'st' => $st];
+				}
+
+				if ($best === null || $best['st']['sev'] < 0) {
+					break;
+				}
+
+				$chain[] = [
+					'name' => $nodes[$best['dep']['id']]['name'],
+					'sev'  => $best['st']['sev'],
+					't'    => 'n',
+					'id'   => $best['dep']['id']
+				];
+				$cur = $best['dep'];
+			}
+			else {
+				// the device at the bottom of the walk: its worst open problem ends the chain
+				if (isset($worst_problem[$cur['id']])) {
+					$chain[] = [
+						'name' => $worst_problem[$cur['id']]['name'],
+						'sev'  => $worst_problem[$cur['id']]['sev'],
+						't'    => 'p',
+						'id'   => $cur['id']
+					];
+				}
+
+				break;
+			}
+		}
+	}
+
+	return $chain;
+}
+
+/**
+ * Everything the service dock needs per service: rolled-up severity, total
+ * open problems under it, and the root-cause walk when something is wrong.
+ */
+function topoServiceState(array $services, array $nodes, array $node_status): array {
+	$svc_status = topoServiceStatuses($services, $node_status);
+	$worst_problem = topoWorstProblems($nodes, $node_status);
+	$out = [];
+
+	foreach ($services as $sid => $svc) {
+		$st = $svc_status[$sid];
+		$out[$sid] = [
+			'sev' => $st['sev'],
+			'cnt' => $st['cnt'],
+			'chain' => $st['sev'] >= 0
+				? topoServiceChain($sid, $services, $nodes, $node_status, $svc_status, $worst_problem)
+				: []
+		];
+	}
+
+	return $out;
+}
+
+/**
  * hostid => list of IPv4 addresses configured as Zabbix interfaces.
  */
 function topoHostIps(array $hostids): array {
@@ -538,12 +806,15 @@ $ajax = (getRequest('ajax') === '1');
 // Read-only status feed for the auto-refresh poller.
 if ($ajax && getRequest('mode') === 'status') {
 	[$nodes] = topoLoad();
+	$services = topoServices();
+	$node_status = topoStatuses($nodes);
 	session_write_close();
 
 	header('Content-Type: application/json; charset=UTF-8');
 	echo json_encode([
-		'statuses' => topoStatuses($nodes),
-		'traffic' => topoTraffic($nodes)
+		'statuses' => $node_status,
+		'traffic' => topoTraffic($nodes),
+		'service_state' => topoServiceState($services, $nodes, $node_status)
 	], JSON_UNESCAPED_UNICODE);
 	exit;
 }
@@ -1033,6 +1304,170 @@ if ($ajax) {
 		$reply(true, $enabled ? _('Flow enabled.') : _('Flow disabled.'));
 	}
 
+	if ($mode === 'service_save') {
+		$serviceid = (int) getRequest('serviceid', 0);
+		$name = trim(getRequest('name', ''));
+		$was_new = $serviceid === 0;
+
+		if ($name === '' || mb_strlen($name) > 64) {
+			$reply(false, _('Service name must be 1-64 characters.'));
+		}
+
+		// deps arrive as JSON [[type, id], …]: "n" = topology node, "s" = another service
+		$deps_in = json_decode(getRequest('deps', ''), true);
+		$deps = [];
+
+		if (is_array($deps_in)) {
+			foreach ($deps_in as $d) {
+				if (!is_array($d) || count($d) !== 2 || !in_array($d[0], ['n', 's'], true)) {
+					continue;
+				}
+
+				$id = (int) $d[1];
+
+				if ($id <= 0) {
+					continue;
+				}
+
+				if ($d[0] === 's' && $id === $serviceid) {
+					$reply(false, _('A service cannot depend on itself.'));
+				}
+
+				$deps[$d[0].':'.$id] = ['t' => $d[0], 'id' => $id];
+			}
+		}
+
+		if (count($deps) > 64) {
+			$reply(false, _('Too many dependencies (max 64).'));
+		}
+
+		$dup = DBfetch(DBselect('SELECT topo_serviceid FROM topo_service WHERE name = '.zbx_dbstr($name)));
+
+		if ($dup !== false && (int) $dup['topo_serviceid'] !== $serviceid) {
+			$reply(false, _('A service with this name already exists.'));
+		}
+
+		if ($was_new) {
+			$new = DBfetch(DBselect('INSERT INTO topo_service (name) VALUES ('.zbx_dbstr($name).
+				') RETURNING topo_serviceid'));
+
+			if ($new === false) {
+				$reply(false, _('Database write failed (check the DB user privileges).'));
+			}
+
+			$serviceid = (int) $new['topo_serviceid'];
+		}
+		else {
+			if (!DBfetch(DBselect('SELECT topo_serviceid FROM topo_service WHERE topo_serviceid = '.$serviceid))) {
+				$reply(false, _('The selected service was not found.'));
+			}
+
+			if (!DBexecute('UPDATE topo_service SET name = '.zbx_dbstr($name).
+					' WHERE topo_serviceid = '.$serviceid)) {
+				$reply(false, _('Database write failed (check the DB user privileges).'));
+			}
+		}
+
+		// every dependency target must still exist
+		$nodeids = [];
+		$svcids = [];
+
+		foreach ($deps as $d) {
+			if ($d['t'] === 'n') {
+				$nodeids[$d['id']] = true;
+			}
+			else {
+				$svcids[$d['id']] = true;
+			}
+		}
+
+		$nodeids = array_keys($nodeids);
+		$svcids = array_keys($svcids);
+
+		if ($nodeids) {
+			$known = DBfetch(DBselect('SELECT COUNT(*) AS cnt FROM topo_node'.
+					' WHERE topo_nodeid IN ('.implode(',', $nodeids).')'));
+
+			if ($known === false || (int) $known['cnt'] !== count($nodeids)) {
+				$reply(false, _('One of the selected items no longer exists.'));
+			}
+		}
+
+		if ($svcids) {
+			$known = DBfetch(DBselect('SELECT COUNT(*) AS cnt FROM topo_service'.
+					' WHERE topo_serviceid IN ('.implode(',', $svcids).')'));
+
+			if ($known === false || (int) $known['cnt'] !== count($svcids)) {
+				$reply(false, _('One of the selected items no longer exists.'));
+			}
+
+			// a dependency that closes a loop would make the roll-up chase itself —
+			// the runtime cuts cycles, but refusing the edge keeps the tree meaningful
+			$edges = [];
+			$res = DBselect('SELECT serviceid, dep_serviceid FROM topo_service_dep'.
+					' WHERE dep_serviceid IS NOT NULL');
+
+			while ($row = DBfetch($res)) {
+				if ((int) $row['serviceid'] !== $serviceid) {
+					$edges[(int) $row['serviceid']][] = (int) $row['dep_serviceid'];
+				}
+			}
+
+			foreach ($svcids as $t) {
+				$edges[$serviceid][] = (int) $t;
+			}
+
+			$reachable = static function (int $from, int $target) use ($edges): bool {
+				$seen = [$from => true];
+				$stack = [$from];
+
+				while ($stack) {
+					foreach ($edges[array_pop($stack)] ?? [] as $next) {
+						if ($next === $target) {
+							return true;
+						}
+
+						if (!isset($seen[$next])) {
+							$seen[$next] = true;
+							$stack[] = $next;
+						}
+					}
+				}
+
+				return false;
+			};
+
+			foreach ($svcids as $t) {
+				if ($reachable((int) $t, $serviceid)) {
+					$reply(false, _('That dependency would create a circular chain.'));
+				}
+			}
+		}
+
+		// the dependency list is replaced wholesale on every save
+		DBexecute('DELETE FROM topo_service_dep WHERE serviceid = '.$serviceid);
+
+		foreach ($deps as $d) {
+			DBexecute('INSERT INTO topo_service_dep (serviceid, dep_serviceid, nodeid) VALUES ('.$serviceid.', '
+				.($d['t'] === 's' ? $d['id'] : 'NULL').', '
+				.($d['t'] === 'n' ? $d['id'] : 'NULL').')');
+		}
+
+		$reply(true, $was_new ? _('Service created.') : _('Service saved.'));
+	}
+
+	if ($mode === 'service_delete') {
+		$serviceid = (int) getRequest('serviceid', 0);
+
+		if (!DBfetch(DBselect('SELECT topo_serviceid FROM topo_service WHERE topo_serviceid = '.$serviceid))) {
+			$reply(false, _('The service to delete was not found.'));
+		}
+
+		// deps pointing at this service go with it (dep_serviceid FK cascade)
+		DBexecute('DELETE FROM topo_service WHERE topo_serviceid = '.$serviceid);
+		$reply(true, _('Service deleted.'));
+	}
+
 	if ($mode === 'move') {
 		$nodeid = (int) getRequest('nodeid', 0);
 		$x = max(0, (int) getRequest('x', 0));
@@ -1048,6 +1483,8 @@ if ($ajax) {
 [$nodes, $links] = topoLoad();
 $statuses = topoStatuses($nodes);
 $flows = topoFlows();
+$services = topoServices();
+$service_state = topoServiceState($services, $nodes, $statuses);
 
 // Hosts for the "add device" picker (Super admin only).
 $hosts = $is_admin
@@ -1130,13 +1567,24 @@ $i18n = [
 	'no_traffic' => _('No traffic data.'),
 	'current_problems' => _('Current problems'),
 	'problems_col' => _('Problem'),
-	'no_problems' => _('No open problems.')
+	'no_problems' => _('No open problems.'),
+	'new_service' => _('New service'),
+	'service_settings' => _('Service settings'),
+	'enter_service_name' => _('Enter a service name first.'),
+	'confirm_delete_service' => _('Delete service "%1$s"?'),
+	'root_cause' => _('Root cause'),
+	'depends_on' => _('Depends on'),
+	'no_deps' => _('No dependencies.'),
+	'no_services' => _('No services yet.'),
+	'status_lbl' => _('Status')
 ];
 
 $data = [
 	'nodes' => array_values($nodes),
 	'links' => $links,
 	'flows' => $flows,
+	'services' => array_values($services),
+	'service_state' => $service_state,
 	'statuses' => $statuses,
 	'traffic' => topoTraffic($nodes),
 	'host_names' => $host_names,
@@ -1401,6 +1849,58 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .pt-row.is-ack {
 			background-image: linear-gradient(rgba(255, 255, 255, .68), rgba(255, 255, 255, .68)); }
 
+		/* ---- services dock (right side of the map) ---- */
+		.topo .svc-dock { position: absolute; top: 12px; right: 12px; z-index: 7; width: 236px;
+			max-height: calc(100% - 24px); box-sizing: border-box; display: flex; flex-direction: column;
+			gap: 8px; background: rgba(10, 17, 32, .88); backdrop-filter: blur(6px);
+			border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+		.topo .svc-dock[hidden] { display: none; }
+		.topo .svc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+		.topo .svc-head b { font-size: 13px; white-space: nowrap; }
+		.topo .svc-head .tbtn { padding: 5px 10px; font-size: 12px; }
+		.topo .svc-list { overflow-y: auto; display: flex; flex-direction: column; gap: 5px; min-height: 0; }
+		.topo .svcrow { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 9px;
+			background: var(--surface-2); border: 1px solid var(--line-soft); cursor: pointer; }
+		.topo .svcrow:hover { border-color: #3d5880; }
+		.topo .svcrow.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+		.topo .svcrow .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+		.topo .svcrow .sname { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+			white-space: nowrap; }
+		.topo .svcrow .scount { margin-left: auto; color: #fff; font-size: 10.5px; border-radius: 9px;
+			padding: 1px 7px; flex: 0 0 auto; }
+		.topo .svcrow .dot.is-alert, .topo .svccard .dot.is-alert { animation: livepulse 1.4s ease-in-out infinite; }
+
+		/* ---- service card: status, root-cause chain, dependencies ---- */
+		.topo .svccard { width: 330px; }
+		.topo .svccard .ifc-body { max-height: 55vh; overflow-y: auto; margin-top: 8px; }
+		.topo .chain-row, .topo .dep-row { display: flex; align-items: baseline; gap: 7px; padding: 4px 6px;
+			font-size: 12.5px; border-radius: 6px; }
+		.topo .chain-row:hover, .topo .dep-row:hover { background: var(--accent-soft); }
+		.topo .chain-row, .topo .dep-row { cursor: pointer; }
+		.topo .chain-row .arr { font-weight: 700; flex: 0 0 auto; }
+		.topo .chain-row .cnm, .topo .dep-row .dnm { color: var(--text); overflow-wrap: anywhere; }
+		.topo .chain-row .cnm.is-prob { font-weight: 600; }
+		.topo .dep-row .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; align-self: center; }
+		.topo .svc-del { margin-top: 12px; width: 100%; border-color: rgba(228, 89, 89, .5);
+			color: var(--danger); }
+		.topo .svc-del:hover { background: rgba(228, 89, 89, .12); }
+
+		/* ---- service modal: two checkbox columns of dependency targets ---- */
+		.topo .tmodal-wide { width: min(560px, calc(100vw - 32px)); }
+		.topo .svc-dep-cols { display: flex; gap: 12px; }
+		.topo .svc-dep-cols > div { flex: 1; min-width: 0; }
+		.topo .svc-dep-cap { font-size: 11px; color: var(--text-dim); margin-bottom: 5px; }
+		.topo .svc-dep-box { border: 1px solid #2a3d5e; border-radius: 8px; background: #0c1526;
+			max-height: 180px; overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column;
+			gap: 2px; }
+		.topo .svc-dep-box label.svc-dep-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px;
+			color: var(--text); padding: 3px 4px; border-radius: 5px; cursor: pointer; margin: 0; }
+		.topo .svc-dep-box label.svc-dep-item:hover { background: var(--accent-soft); }
+		.topo .svc-dep-box label.svc-dep-item.is-group { font-weight: 700; }
+		.topo .svc-dep-box label.svc-dep-item input { width: auto; min-width: 0; margin: 0;
+			accent-color: var(--accent); }
+		.topo .svc-dep-empty { color: var(--text-dim); font-size: 12px; padding: 2px 4px; }
+
 		/* ---- device settings modal ---- */
 		.topo .tmodal-wrap { position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
 			background: rgba(4, 9, 18, .62); backdrop-filter: blur(3px); }
@@ -1430,7 +1930,8 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .toast.is-on { opacity: 1; }
 
 		@media (prefers-reduced-motion: reduce) {
-			.topo .live .live-dot, .topo .node .dot.is-alert { animation: none; }
+			.topo .live .live-dot, .topo .node .dot.is-alert, .topo .svcrow .dot.is-alert,
+			.topo .svccard .dot.is-alert { animation: none; }
 		}
 	</style>
 </head>
@@ -1461,6 +1962,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		<span class="sub" style="padding: 4px 10px; border: 1px solid var(--line-soft); border-radius: 8px;">
 			<?= _('View only — only Super admins can edit.') ?></span>
 <?php endif ?>
+		<button type="button" class="tbtn tbtn-ghost" id="btn-services"><?= _('Services') ?></button>
 		<a class="back" href="zabbix.php"><?= _('← Back to main menu') ?></a>
 	</div>
 
@@ -1560,6 +2062,28 @@ header('Content-Type: text/html; charset=UTF-8');
 			</div>
 		</div>
 	</div>
+	<div class="tmodal-wrap" id="modal-service">
+		<div class="tmodal tmodal-wide" role="dialog" aria-modal="true">
+			<h3 id="svc-modal-title"><?= _('New service') ?></h3>
+			<label for="svc-name"><?= _('Service name') ?></label>
+			<input type="text" id="svc-name" maxlength="64" placeholder="<?= _('e.g. Email, ERP, CCTV') ?>">
+			<label><?= _('Depends on') ?></label>
+			<div class="svc-dep-cols">
+				<div>
+					<div class="svc-dep-cap"><?= _('Devices and groups') ?></div>
+					<div class="svc-dep-box" id="svc-dep-nodes"></div>
+				</div>
+				<div>
+					<div class="svc-dep-cap"><?= _('Other services') ?></div>
+					<div class="svc-dep-box" id="svc-dep-svcs"></div>
+				</div>
+			</div>
+			<div class="tmodal-btns">
+				<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-service"><?= _('Cancel') ?></button>
+				<button type="button" class="tbtn" id="btn-save-service"><?= _('Save') ?></button>
+			</div>
+		</div>
+	</div>
 <?php endif ?>
 
 	<div class="map-area">
@@ -1570,6 +2094,16 @@ header('Content-Type: text/html; charset=UTF-8');
 		</div>
 
 		<div class="hud" id="hud"></div>
+
+		<div class="svc-dock" id="svc-dock"<?php if (!$services) echo ' hidden' ?>>
+			<div class="svc-head">
+				<b><?= _('Services') ?></b>
+<?php if ($is_admin): ?>
+				<button type="button" class="tbtn" id="btn-svc-new"><?= _('New service') ?></button>
+<?php endif ?>
+			</div>
+			<div class="svc-list" id="svc-list"></div>
+		</div>
 
 		<div class="empty" id="empty">
 			<div class="e-card">
@@ -1615,6 +2149,14 @@ let flowDraft = null;
 // drawLinks runs during the first render, before the ifcard section appears
 let selectedId = null;
 
+// business services riding on top of the map: each one rolls up the worst
+// severity found in its dependency tree (nodes and other services)
+const services = DATA.services || [];
+const svcState = new Map(Object.entries(DATA.service_state || {}).map(([k, v]) => [+k, v]));
+let svcFocus = null;        // serviceid whose nodes are highlighted on the canvas
+let svcFocusNodes = null;   // Set of those nodeids, null when nothing is focused
+let svccard = null, svccardFor = null;
+
 const sevColor = s => s >= 0 ? SEV[s].c : OK_COLOR;
 
 const escHtml = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1647,6 +2189,31 @@ if (!DATA.nodes.length) {
 
 const membersOf = gid => [...nodes.values()].filter(n => n.type === 'device' && n.parentid === gid);
 const nodeById = id => nodes.get(id);
+
+// every topology node a service (transitively) leans on
+function serviceNodeSet(sid) {
+	const set = new Set();
+	const seen = new Set();
+	const walk = id => {
+		const s = services.find(x => x.serviceid === id);
+
+		if (!s || seen.has(id)) return;
+
+		seen.add(id);
+
+		for (const d of s.deps) {
+			if (d.t === 'n') {
+				set.add(d.id);
+			}
+			else {
+				walk(d.id);
+			}
+		}
+	};
+
+	walk(sid);
+	return set;
+}
 
 function groupBox(g) {
 	const members = membersOf(g.nodeid);
@@ -1726,9 +2293,12 @@ function flowsSvg(boxes) {
 		const pts = flowPoints(f.hops, boxes);
 		if (pts.length < 2) continue;
 
-		// when a device is selected, flows it is not part of fade like links do
-		const mine = selectedId === null || f.hops.includes(selectedId);
-		const alpha = selectedId === null ? .92 : mine ? 1 : .1;
+		// when a device is selected (or a service focuses a set of nodes), flows
+		// outside that focus fade like links do
+		const none = selectedId === null && svcFocusNodes === null;
+		const mine = none || (selectedId !== null && f.hops.includes(selectedId))
+			|| (svcFocusNodes !== null && f.hops.some(h => svcFocusNodes.has(h)));
+		const alpha = none ? .92 : mine ? 1 : .1;
 		const path = flowPathOf(pts);
 
 		let len = 0;
@@ -1869,10 +2439,13 @@ function drawLinks(boxes) {
 		const w = sev >= 4 ? 3.5 : sev >= 2 ? 2.5 : 1.8;
 		const len = Math.hypot(p2.x - p1.x, p2.y - p1.y);
 
-		// when a device is selected its own links stand out and the rest fade
-		const mine = selectedId !== null && (l.a === selectedId || l.b === selectedId);
-		const glow = selectedId === null ? .14 : mine ? .4 : .04;
-		const alpha = selectedId === null ? .8 : mine ? 1 : .15;
+		// when a device is selected (or a service focuses a set of nodes) its own
+		// links stand out and the rest fade
+		const anysel = selectedId !== null || svcFocusNodes !== null;
+		const mine = (selectedId !== null && (l.a === selectedId || l.b === selectedId))
+			|| (svcFocusNodes !== null && (svcFocusNodes.has(l.a) || svcFocusNodes.has(l.b)));
+		const glow = !anysel ? .14 : mine ? .4 : .04;
+		const alpha = !anysel ? .8 : mine ? 1 : .15;
 		const lw = mine ? w + 1.6 : w;
 
 		// soft under-glow, then the line itself, then packets moving both ways
@@ -1905,7 +2478,7 @@ function drawLinks(boxes) {
 		if (tag) {
 			const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
 			const tw = tag.length * 6.2 + 14;
-			const to = selectedId !== null && !mine ? .15 : 1;
+			const to = anysel && !mine ? .15 : 1;
 
 			html += '<g opacity="'+to+'"><rect x="'+(mx - tw / 2)+'" y="'+(my - 10)+'" width="'+tw+
 				'" height="20" rx="10" fill="#101a2e" stroke="#2a3d5e"/>'+
@@ -2021,17 +2594,20 @@ function applyTraffic() {
 	}
 }
 
-// ring the nodes the selected device is wired to
+// ring the nodes the selected device is wired to, or the whole dependency set
+// of the focused service (stronger ring)
 function applySelection() {
 	for (const n of nodes.values()) {
 		const isNb = selectedId !== null && n.nodeid !== selectedId
 			&& DATA.links.some(l => (l.a === selectedId && l.b === n.nodeid)
 				|| (l.b === selectedId && l.a === n.nodeid));
+		const isSvc = svcFocusNodes !== null && svcFocusNodes.has(n.nodeid);
 		const el = n.type === 'device'
 			? nodeEls.get(n.nodeid)
 			: (gboxEls[n.nodeid] || nodeEls.get(n.nodeid));
 
-		el?.classList.toggle('is-nb', isNb);
+		el?.classList.toggle('is-nb', isNb && !isSvc);
+		el?.classList.toggle('is-svc', isSvc);
 	}
 }
 
@@ -2057,6 +2633,11 @@ function closeIfcard() {
 	// same for the notifications card
 	if (typeof probcard !== 'undefined' && probcard) {
 		closeProbCard();
+	}
+
+	// and for the service card (its canvas highlight goes with it)
+	if (svccard) {
+		closeSvcCard();
 	}
 
 	selectedId = null;
@@ -2867,6 +3448,374 @@ async function openProbCard(n) {
 	}
 }
 
+// ---- services dock + service card (business layer over the map) ----
+
+function renderServicesDock() {
+	const wrap = document.getElementById('svc-list');
+
+	if (!wrap) return;
+
+	wrap.textContent = '';
+
+	if (!services.length) {
+		const note = document.createElement('div');
+		note.className = 'svcrow';
+		note.style.color = 'var(--text-dim)';
+		note.style.fontSize = '12px';
+		note.style.cursor = 'default';
+		note.textContent = T.no_services;
+		wrap.appendChild(note);
+		return;
+	}
+
+	// worst service first, then the noisiest, then alphabetical
+	const rows = [...services].sort((a, b) => {
+		const sa = svcState.get(a.serviceid) || {sev: -1, cnt: 0};
+		const sb = svcState.get(b.serviceid) || {sev: -1, cnt: 0};
+		return sb.sev - sa.sev || sb.cnt - sa.cnt || a.name.localeCompare(b.name, 'th');
+	});
+
+	for (const s of rows) {
+		const st = svcState.get(s.serviceid) || {sev: -1, cnt: 0};
+		const row = document.createElement('div');
+		row.className = 'svcrow' + (svcFocus === s.serviceid ? ' is-active' : '');
+
+		const dot = document.createElement('span');
+		dot.className = 'dot' + (st.sev >= 2 ? ' is-alert' : '');
+		dot.style.background = sevColor(st.sev);
+		dot.style.boxShadow = '0 0 8px ' + sevColor(st.sev) + '99';
+
+		const name = document.createElement('span');
+		name.className = 'sname';
+		name.textContent = s.name;
+
+		row.append(dot, name);
+
+		if (st.cnt > 0) {
+			const cnt = document.createElement('span');
+			cnt.className = 'scount';
+			cnt.textContent = st.cnt;
+			cnt.style.background = sevColor(st.sev);
+			row.appendChild(cnt);
+		}
+
+		row.addEventListener('click', () => openSvcCard(s));
+		wrap.appendChild(row);
+	}
+}
+
+function closeSvcCard() {
+	if (svccard) {
+		svccard.remove();
+		svccard = null;
+		svccardFor = null;
+	}
+
+	svcFocus = null;
+	svcFocusNodes = null;
+	renderServicesDock();
+	applySelection();
+	updateGeometry();
+}
+
+// clicking a service: ring its whole dependency set on the canvas and open
+// its card next to the dock
+function openSvcCard(s) {
+	if (svccardFor === s.serviceid) {
+		closeSvcCard();
+		return;
+	}
+
+	closeIfcard();
+
+	svcFocus = s.serviceid;
+	svcFocusNodes = serviceNodeSet(s.serviceid);
+
+	if (!svcFocusNodes.size) {
+		svcFocusNodes = null;
+	}
+
+	applySelection();
+	updateGeometry();
+	renderServicesDock();
+	buildSvcCard(s);
+
+	// bring the worst node of the set into view so the highlight is visible
+	if (svcFocusNodes) {
+		const worst = [...svcFocusNodes]
+			.map(id => nodeById(id))
+			.filter(Boolean)
+			.sort((a, b) => (statuses.get(b.nodeid) || {sev: -1}).sev - (statuses.get(a.nodeid) || {sev: -1}).sev)[0];
+		const el = worst && (nodeEls.get(worst.nodeid) || gboxEls[worst.nodeid]);
+
+		if (el) {
+			el.scrollIntoView({behavior: MOTION ? 'smooth' : 'auto', block: 'nearest', inline: 'nearest'});
+		}
+	}
+}
+
+// the card is rebuilt on every poll tick while open — it holds no input state
+function buildSvcCard(s) {
+	const st = svcState.get(s.serviceid) || {sev: -1, cnt: 0, chain: []};
+	const area = document.querySelector('.map-area');
+
+	if (!area) return;
+
+	if (svccard) {
+		svccard.remove();
+	}
+
+	const dock = document.getElementById('svc-dock');
+	const card = document.createElement('div');
+	card.className = 'ifcard svccard';
+	card.style.right = (dock && !dock.hidden ? 260 : 12) + 'px';
+	card.style.top = '12px';
+
+	const head = document.createElement('h4');
+	const dot = document.createElement('span');
+	dot.className = 'dot' + (st.sev >= 2 ? ' is-alert' : '');
+	dot.style.background = sevColor(st.sev);
+	const title = document.createElement('span');
+	title.textContent = s.name;
+	head.append(dot, title);
+
+	if (DATA.is_admin) {
+		const gear = document.createElement('button');
+		gear.type = 'button';
+		gear.className = 'ifc-gear';
+		gear.title = T.service_settings;
+		gear.textContent = '⚙';
+		gear.addEventListener('click', () => openServiceModal(s));
+		head.append(gear);
+	}
+
+	const close = document.createElement('button');
+	close.type = 'button';
+	close.className = 'ifc-close';
+	close.textContent = '✕';
+	close.addEventListener('click', closeSvcCard);
+	head.append(close);
+
+	const sub = document.createElement('div');
+	sub.className = 'ifc-sub';
+	sub.textContent = T.status_lbl + ': ' + (st.sev >= 0 ? T.sev[st.sev] : T.sev_ok);
+
+	const body = document.createElement('div');
+	body.className = 'ifc-body';
+
+	// root-cause walk: service ← worst dependency ← … ← the problem itself
+	if (st.chain && st.chain.length) {
+		const sec = document.createElement('div');
+		sec.className = 'ifc-sec';
+		sec.textContent = T.root_cause;
+		body.appendChild(sec);
+
+		for (const step of st.chain) {
+			const row = document.createElement('div');
+			row.className = 'chain-row';
+
+			const arr = document.createElement('span');
+			arr.className = 'arr';
+			arr.style.color = sevColor(step.sev);
+			arr.textContent = '←';
+			row.appendChild(arr);
+
+			const nm = document.createElement('span');
+			nm.className = 'cnm' + (step.t === 'p' ? ' is-prob' : '');
+			nm.textContent = step.name;
+			row.appendChild(nm);
+
+			row.addEventListener('click', () => {
+				if (step.t === 'n') {
+					const n = nodeById(step.id);
+					if (n) openIfcard(n);
+				}
+				else if (step.t === 's') {
+					const target = services.find(x => x.serviceid === step.id);
+					if (target) openSvcCard(target);
+				}
+				else {
+					const n = nodeById(step.id);
+					if (n) openProbCard(n);
+				}
+			});
+
+			body.appendChild(row);
+		}
+	}
+
+	// direct dependencies, each with the live status of the target
+	const sec2 = document.createElement('div');
+	sec2.className = 'ifc-sec';
+	sec2.textContent = T.depends_on;
+	body.appendChild(sec2);
+
+	if (!s.deps.length) {
+		const note = document.createElement('div');
+		note.className = 'fc-note';
+		note.textContent = T.no_deps;
+		body.appendChild(note);
+	}
+	else {
+		for (const d of s.deps) {
+			const row = document.createElement('div');
+			row.className = 'dep-row';
+
+			const sev = d.t === 's'
+				? (svcState.get(d.id) || {sev: -1}).sev
+				: (statuses.get(d.id) || {sev: -1}).sev;
+
+			const ddot = document.createElement('span');
+			ddot.className = 'dot';
+			ddot.style.background = sevColor(sev);
+			row.appendChild(ddot);
+
+			const nm = document.createElement('span');
+			nm.className = 'dnm';
+			nm.textContent = d.t === 's'
+				? ((services.find(x => x.serviceid === d.id) || {}).name || '?')
+				: ((nodeById(d.id) || {}).name || '?');
+			row.appendChild(nm);
+
+			row.addEventListener('click', () => {
+				if (d.t === 'n') {
+					const n = nodeById(d.id);
+					if (n) openIfcard(n);
+				}
+				else {
+					const target = services.find(x => x.serviceid === d.id);
+					if (target) openSvcCard(target);
+				}
+			});
+
+			body.appendChild(row);
+		}
+	}
+
+	// admin shortcut to remove the service without opening the editor
+	if (DATA.is_admin) {
+		const del = document.createElement('button');
+		del.type = 'button';
+		del.className = 'tbtn tbtn-ghost svc-del';
+		del.textContent = T.delete_lbl;
+		del.addEventListener('click', async () => {
+			if (!confirm(T.confirm_delete_service.replace('%1$s', s.name))) return;
+
+			const r = await post({mode: 'service_delete', serviceid: s.serviceid});
+
+			if (r && r.ok) location.reload();
+			if (r && !r.ok) toast(r.msg);
+		});
+		body.appendChild(del);
+	}
+
+	card.append(head, sub, body);
+	area.appendChild(card);
+	svccard = card;
+	svccardFor = s.serviceid;
+}
+
+// ---- service settings modal (admin) ----
+
+let svcModalMode = null;
+
+function openServiceModal(s) {
+	svcModalMode = s ? s.serviceid : 0;
+	document.getElementById('svc-modal-title').textContent = s ? T.service_settings : T.new_service;
+	document.getElementById('svc-name').value = s ? s.name : '';
+
+	// dependency targets: every node, plus every other service
+	const nbox = document.getElementById('svc-dep-nodes');
+	nbox.textContent = '';
+
+	const nodesSorted = [...nodes.values()].sort((a, b) =>
+		(a.type === b.type ? 0 : a.type === 'group' ? -1 : 1) || a.name.localeCompare(b.name, 'th'));
+
+	for (const n of nodesSorted) {
+		const lbl = document.createElement('label');
+		lbl.className = 'svc-dep-item' + (n.type === 'group' ? ' is-group' : '');
+
+		const cb = document.createElement('input');
+		cb.type = 'checkbox';
+		cb.value = 'n:' + n.nodeid;
+
+		if (s && s.deps.some(d => d.t === 'n' && d.id === n.nodeid)) {
+			cb.checked = true;
+		}
+
+		lbl.append(cb, document.createTextNode(n.name));
+		nbox.appendChild(lbl);
+	}
+
+	if (!nodesSorted.length) {
+		const note = document.createElement('div');
+		note.className = 'svc-dep-empty';
+		note.textContent = '—';
+		nbox.appendChild(note);
+	}
+
+	const sbox = document.getElementById('svc-dep-svcs');
+	sbox.textContent = '';
+
+	for (const o of services) {
+		if (s && o.serviceid === s.serviceid) continue;
+
+		const lbl = document.createElement('label');
+		lbl.className = 'svc-dep-item';
+
+		const cb = document.createElement('input');
+		cb.type = 'checkbox';
+		cb.value = 's:' + o.serviceid;
+
+		if (s && s.deps.some(d => d.t === 's' && d.id === o.serviceid)) {
+			cb.checked = true;
+		}
+
+		lbl.append(cb, document.createTextNode(o.name));
+		sbox.appendChild(lbl);
+	}
+
+	if (!sbox.children.length) {
+		const note = document.createElement('div');
+		note.className = 'svc-dep-empty';
+		note.textContent = '—';
+		sbox.appendChild(note);
+	}
+
+	document.getElementById('modal-service').classList.add('is-on');
+	document.getElementById('svc-name').focus();
+}
+
+function closeServiceModal() {
+	document.getElementById('modal-service')?.classList.remove('is-on');
+	svcModalMode = null;
+}
+
+document.getElementById('btn-cancel-service')?.addEventListener('click', closeServiceModal);
+
+document.getElementById('modal-service')?.addEventListener('click', e => {
+	if (e.target === e.currentTarget) closeServiceModal();
+});
+
+document.getElementById('btn-save-service')?.addEventListener('click', async () => {
+	const name = document.getElementById('svc-name').value.trim();
+
+	if (!name) return toast(T.enter_service_name);
+	if (svcModalMode === null) return;
+
+	const deps = [];
+
+	document.querySelectorAll('#svc-dep-nodes input:checked, #svc-dep-svcs input:checked').forEach(cb => {
+		const [t, id] = cb.value.split(':');
+		deps.push([t, +id]);
+	});
+
+	const r = await post({mode: 'service_save', serviceid: svcModalMode, name, deps: JSON.stringify(deps)});
+
+	if (r && r.ok) location.reload();
+	if (r && !r.ok) toast(r.msg);
+});
+
 // ---- drag (admin) ----
 
 let drag = null;
@@ -2979,6 +3928,7 @@ document.addEventListener('keydown', e => {
 		closeLinkEditor();
 		closeSettings();
 		closeFlowModal();
+		closeServiceModal();
 		closeIfcard();
 		cancelFlowDraft();
 		setMode(mode);
@@ -3174,6 +4124,25 @@ document.getElementById('btn-save-device')?.addEventListener('click', async () =
 	if (r && !r.ok) toast(r.msg);
 });
 
+// ---- services dock toggle + init ----
+
+document.getElementById('btn-services')?.addEventListener('click', () => {
+	const dock = document.getElementById('svc-dock');
+
+	if (dock) {
+		dock.hidden = !dock.hidden;
+		document.getElementById('btn-services')?.classList.toggle('is-active', !dock.hidden);
+	}
+});
+
+document.getElementById('btn-svc-new')?.addEventListener('click', () => openServiceModal(null));
+
+renderServicesDock();
+
+if (services.length) {
+	document.getElementById('btn-services')?.classList.add('is-active');
+}
+
 // ---- plumbing ----
 
 async function post(body, silent) {
@@ -3219,6 +4188,25 @@ setInterval(async () => {
 			if (json.traffic) {
 				for (const [k, v] of Object.entries(json.traffic)) {
 					traffic.set(+k, v);
+				}
+			}
+
+			if (json.service_state) {
+				svcState.clear();
+
+				for (const [k, v] of Object.entries(json.service_state)) {
+					svcState.set(+k, v);
+				}
+
+				renderServicesDock();
+
+				// keep an open service card on the fresh state
+				if (svccardFor !== null) {
+					const s = services.find(x => x.serviceid === svccardFor);
+
+					if (s) {
+						buildSvcCard(s);
+					}
 				}
 			}
 
