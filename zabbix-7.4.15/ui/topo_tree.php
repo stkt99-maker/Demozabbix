@@ -697,7 +697,7 @@ if ($ajax && getRequest('mode') === 'problems') {
 
 		// one trigger can reference several items of the same host — keep one row per event
 		$res = DBselect('SELECT DISTINCT ON (p.eventid, i.hostid) p.eventid, i.hostid, p.name AS pname,'.
-				' p.severity, p.clock FROM problem p'.
+				' p.severity, p.clock, p.acknowledged FROM problem p'.
 				' JOIN functions f ON f.triggerid = p.objectid'.
 				' JOIN items i ON i.itemid = f.itemid'.
 				' WHERE i.hostid IN ('.$list.') AND p.r_eventid IS NULL');
@@ -709,7 +709,8 @@ if ($ajax && getRequest('mode') === 'problems') {
 				'hostid' => (int) $row['hostid'],
 				'pname'  => $row['pname'],
 				'sev'    => (int) $row['severity'],
-				'clock'  => (int) $row['clock']
+				'clock'  => (int) $row['clock'],
+				'ack'    => (int) $row['acknowledged']
 			];
 		}
 
@@ -1122,6 +1123,7 @@ $i18n = [
 	'sampled' => _('sampled %1$s'),
 	'no_traffic' => _('No traffic data.'),
 	'current_problems' => _('Current problems'),
+	'problems_col' => _('Problem'),
 	'no_problems' => _('No open problems.')
 ];
 
@@ -1377,21 +1379,21 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .fc-clock { color: var(--text-dim); font-size: 10.5px; margin-top: 1px; }
 		.topo .fc-note { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
 
-		/* ---- notifications card (problem-count badge click) ---- */
-		.topo .probcard { width: 330px; }
-		.topo .probcard .ifc-body { max-height: 46vh; overflow-y: auto; }
+		/* ---- notifications card: Zabbix-style current-problems table ---- */
+		.topo .probcard { width: 380px; }
+		.topo .probcard .ifc-body { max-height: 50vh; overflow-y: auto; margin-top: 9px; }
 		.topo .n-badge { cursor: pointer; }
 		.topo .n-badge:hover { filter: brightness(1.2); }
-		.topo .pc-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0 5px;
-			border-top: 1px solid var(--line-soft); font-size: 12px; }
-		.topo .pc-row:first-of-type { border-top: 0; }
-		.topo .pc-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto;
-			align-self: center; }
-		.topo .pc-body { flex: 1; min-width: 0; }
-		.topo .pc-name { color: var(--text); overflow: hidden; text-overflow: ellipsis;
-			white-space: nowrap; }
-		.topo .pc-host { color: #6fc3ff; font-size: 10.5px; margin-top: 1px; }
-		.topo .pc-age { color: var(--text-dim); font-size: 10.5px; white-space: nowrap; }
+		.topo .pt-head { font-size: 11.5px; color: var(--text-dim);
+			border-bottom: 1px solid var(--line-soft); padding: 2px 6px 7px; }
+		.topo .pt-row { border-radius: 3px; padding: 8px 11px; margin-top: 4px; color: #1f2c33; }
+		.topo .pt-name { font-size: 12.5px; font-weight: 600; line-height: 1.45;
+			overflow-wrap: anywhere; }
+		.topo .pt-meta { display: flex; gap: 10px; font-size: 10.5px; margin-top: 3px;
+			color: rgba(31, 44, 51, .72); }
+		/* acknowledged problems appear as a washed-out tint of the severity color */
+		.topo .pt-row.is-ack {
+			background-image: linear-gradient(rgba(255, 255, 255, .68), rgba(255, 255, 255, .68)); }
 
 		/* ---- device settings modal ---- */
 		.topo .tmodal-wrap { position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
@@ -2796,34 +2798,37 @@ async function openProbCard(n) {
 	// a group card lists several hosts — tag each row with its host name
 	const multi = n.type === 'group';
 
+	// Zabbix problems-table look: "Problem" column header, then rows tinted
+	// with the severity color, washed out when the problem is acknowledged
+	const colHead = document.createElement('div');
+	colHead.className = 'pt-head';
+	colHead.textContent = T.problems_col;
+	body.appendChild(colHead);
+
 	for (const p of r.problems) {
 		const row = document.createElement('div');
-		row.className = 'pc-row';
-
-		const sd = document.createElement('span');
-		sd.className = 'pc-dot';
-		sd.style.background = sevColor(p.sev);
-
-		const bwrap = document.createElement('div');
-		bwrap.className = 'pc-body';
+		row.className = 'pt-row' + (p.ack ? ' is-ack' : '');
+		row.style.backgroundColor = sevColor(p.sev);
 
 		const nm = document.createElement('div');
-		nm.className = 'pc-name';
+		nm.className = 'pt-name';
 		nm.textContent = p.pname;
-		bwrap.appendChild(nm);
+		row.appendChild(nm);
+
+		const meta = document.createElement('div');
+		meta.className = 'pt-meta';
 
 		if (multi) {
-			const hn = document.createElement('div');
-			hn.className = 'pc-host';
+			const hn = document.createElement('span');
 			hn.textContent = (r.hosts && r.hosts[p.hostid]) || '';
-			bwrap.appendChild(hn);
+			meta.appendChild(hn);
 		}
 
 		const age = document.createElement('span');
-		age.className = 'pc-age';
 		age.textContent = fmtAge(p.clock);
+		meta.appendChild(age);
 
-		row.append(sd, bwrap, age);
+		row.appendChild(meta);
 		body.appendChild(row);
 	}
 }
