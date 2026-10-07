@@ -375,6 +375,50 @@ function topoServerHostid(): ?int {
 }
 
 /**
+ * Active problems for a set of hosts: one row per event, worst and newest
+ * first, with the host names resolved for group-style listing.
+ */
+function topoProblems(array $hostids): array {
+	if (!$hostids) {
+		return ['problems' => [], 'hosts' => []];
+	}
+
+	$list = implode(',', array_map('intval', $hostids));
+
+	// one trigger can reference several items of the same host — keep one row per event
+	$res = DBselect('SELECT DISTINCT ON (p.eventid, i.hostid) p.eventid, i.hostid, p.name AS pname,'.
+			' p.severity, p.clock, p.acknowledged FROM problem p'.
+			' JOIN functions f ON f.triggerid = p.objectid'.
+			' JOIN items i ON i.itemid = f.itemid'.
+			' WHERE i.hostid IN ('.$list.') AND p.r_eventid IS NULL');
+
+	$problems = [];
+
+	while ($row = DBfetch($res)) {
+		$problems[] = [
+			'hostid' => (int) $row['hostid'],
+			'pname'  => $row['pname'],
+			'sev'    => (int) $row['severity'],
+			'clock'  => (int) $row['clock'],
+			'ack'    => (int) $row['acknowledged']
+		];
+	}
+
+	usort($problems, static function (array $a, array $b): int {
+		return $b['sev'] <=> $a['sev'] ?: $b['clock'] <=> $a['clock'];
+	});
+
+	$hnames = [];
+	$res = DBselect('SELECT hostid, name FROM hosts WHERE hostid IN ('.$list.')');
+
+	while ($row = DBfetch($res)) {
+		$hnames[(int) $row['hostid']] = $row['name'];
+	}
+
+	return ['problems' => $problems, 'hosts' => $hnames];
+}
+
+/**
  * hostid => list of IPv4 addresses configured as Zabbix interfaces.
  */
 function topoHostIps(array $hostids): array {
@@ -564,8 +608,8 @@ if ($ajax && getRequest('mode') === 'ifaces') {
 
 	$out = ['ok' => true, 'links' => array_values($neighbors)]
 		+ ($node['hostid'] !== null
-			? topoIfaces($node['hostid'])
-			: ['ips' => [], 'ifaces' => []]);
+			? topoIfaces($node['hostid']) + topoProblems([$node['hostid']])
+			: ['ips' => [], 'ifaces' => [], 'problems' => [], 'hosts' => []]);
 
 	echo json_encode($out, JSON_UNESCAPED_UNICODE);
 	exit;
@@ -690,45 +734,7 @@ if ($ajax && getRequest('mode') === 'problems') {
 		}
 	}
 
-	$out = ['ok' => true, 'problems' => [], 'hosts' => []];
-
-	if ($hostids) {
-		$list = implode(',', array_map('intval', $hostids));
-
-		// one trigger can reference several items of the same host — keep one row per event
-		$res = DBselect('SELECT DISTINCT ON (p.eventid, i.hostid) p.eventid, i.hostid, p.name AS pname,'.
-				' p.severity, p.clock, p.acknowledged FROM problem p'.
-				' JOIN functions f ON f.triggerid = p.objectid'.
-				' JOIN items i ON i.itemid = f.itemid'.
-				' WHERE i.hostid IN ('.$list.') AND p.r_eventid IS NULL');
-
-		$problems = [];
-
-		while ($row = DBfetch($res)) {
-			$problems[] = [
-				'hostid' => (int) $row['hostid'],
-				'pname'  => $row['pname'],
-				'sev'    => (int) $row['severity'],
-				'clock'  => (int) $row['clock'],
-				'ack'    => (int) $row['acknowledged']
-			];
-		}
-
-		usort($problems, static function (array $a, array $b): int {
-			return $b['sev'] <=> $a['sev'] ?: $b['clock'] <=> $a['clock'];
-		});
-
-		$out['problems'] = $problems;
-
-		$hnames = [];
-		$res = DBselect('SELECT hostid, name FROM hosts WHERE hostid IN ('.$list.')');
-
-		while ($row = DBfetch($res)) {
-			$hnames[(int) $row['hostid']] = $row['name'];
-		}
-
-		$out['hosts'] = $hnames;
-	}
+	$out = ['ok' => true] + topoProblems($hostids);
 
 	echo json_encode($out, JSON_UNESCAPED_UNICODE);
 	exit;
@@ -1332,7 +1338,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .hud b { font-weight: 600; color: var(--text); }
 
 		/* ---- interface detail card ---- */
-		.topo .ifcard { position: absolute; z-index: 30; width: 270px; padding: 11px 13px;
+		.topo .ifcard { position: absolute; z-index: 30; width: 330px; padding: 11px 13px;
 			background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
 			box-shadow: 0 12px 32px rgba(0, 0, 0, .45); cursor: default; }
 		.topo .ifcard h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 1px;
@@ -2071,8 +2077,8 @@ async function openIfcard(n) {
 
 	let x = n.posx + NODE_W + 12;
 
-	if (x + 280 > canvas.scrollWidth) {
-		x = Math.max(8, n.posx - 284);
+	if (x + 340 > canvas.scrollWidth) {
+		x = Math.max(8, n.posx - 344);
 	}
 
 	card.style.left = x + 'px';
@@ -2153,6 +2159,34 @@ async function openIfcard(n) {
 		});
 
 		body.appendChild(ips);
+	}
+
+	// what's wrong on this host right now — severity-tinted rows like the Problems page
+	if (r.problems && r.problems.length) {
+		const sec = document.createElement('div');
+		sec.className = 'ifc-sec';
+		sec.textContent = T.current_problems;
+		body.appendChild(sec);
+
+		for (const p of r.problems) {
+			const row = document.createElement('div');
+			row.className = 'pt-row' + (p.ack ? ' is-ack' : '');
+			row.style.backgroundColor = sevColor(p.sev);
+
+			const nm = document.createElement('div');
+			nm.className = 'pt-name';
+			nm.textContent = p.pname;
+			row.appendChild(nm);
+
+			const meta = document.createElement('div');
+			meta.className = 'pt-meta';
+			const age = document.createElement('span');
+			age.textContent = fmtAge(p.clock);
+			meta.appendChild(age);
+			row.appendChild(meta);
+
+			body.appendChild(row);
+		}
 	}
 
 	// what this node is wired to (topology links), with the neighbor's IPs — shown first
