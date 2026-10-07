@@ -1121,7 +1121,7 @@ $i18n = [
 	'traffic_details' => _('Traffic details'),
 	'sampled' => _('sampled %1$s'),
 	'no_traffic' => _('No traffic data.'),
-	'notif_details' => _('Notification details'),
+	'current_problems' => _('Current problems'),
 	'no_problems' => _('No open problems.')
 ];
 
@@ -1977,7 +1977,7 @@ function applyStatuses() {
 			if (!badge) {
 				badge = document.createElement('span');
 				badge.className = 'n-badge';
-				badge.title = T.notif_details;
+				badge.title = T.current_problems;
 				(el.querySelector('.n-head') || el).appendChild(badge);
 			}
 
@@ -2763,7 +2763,7 @@ async function openProbCard(n) {
 
 	const sub = document.createElement('div');
 	sub.className = 'ifc-sub';
-	sub.textContent = T.notif_details;
+	sub.textContent = T.current_problems;
 
 	const body = document.createElement('div');
 	body.className = 'ifc-body';

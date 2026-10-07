@@ -22685,3 +22685,6 @@ msgstr "รายละเอียดการแจ้งเตือน"
 
 msgid "No open problems."
 msgstr "ไม่มีปัญหาที่เปิดอยู่"
+
+msgid "Current problems"
+msgstr "ปัญหาที่กำลังเกิดขึ้น"
