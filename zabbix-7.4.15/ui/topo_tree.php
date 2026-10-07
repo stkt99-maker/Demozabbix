@@ -657,6 +657,82 @@ if ($ajax && getRequest('mode') === 'flow_detail') {
 	exit;
 }
 
+// Read-only active problems for one node — the notification list behind the
+// red count badge. A device node lists its host's problems; a group node
+// lists the problems of every member host, each row tagged with the host.
+if ($ajax && getRequest('mode') === 'problems') {
+	[$nodes] = topoLoad();
+	session_write_close();
+
+	header('Content-Type: application/json; charset=UTF-8');
+
+	$nodeid = (int) getRequest('nodeid', 0);
+	$node = $nodes[$nodeid] ?? null;
+
+	if ($node === null) {
+		echo json_encode(['ok' => false, 'msg' => _('The selected node was not found.')],
+			JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+
+	$hostids = [];
+
+	if ($node['type'] === 'device') {
+		if ($node['hostid'] !== null) {
+			$hostids[] = $node['hostid'];
+		}
+	}
+	else {
+		foreach ($nodes as $n) {
+			if ($n['type'] === 'device' && $n['parentid'] === $nodeid && $n['hostid'] !== null) {
+				$hostids[] = $n['hostid'];
+			}
+		}
+	}
+
+	$out = ['ok' => true, 'problems' => [], 'hosts' => []];
+
+	if ($hostids) {
+		$list = implode(',', array_map('intval', $hostids));
+
+		// one trigger can reference several items of the same host — keep one row per event
+		$res = DBselect('SELECT DISTINCT ON (p.eventid, i.hostid) p.eventid, i.hostid, p.name AS pname,'.
+				' p.severity, p.clock FROM problem p'.
+				' JOIN functions f ON f.triggerid = p.objectid'.
+				' JOIN items i ON i.itemid = f.itemid'.
+				' WHERE i.hostid IN ('.$list.') AND p.r_eventid IS NULL');
+
+		$problems = [];
+
+		while ($row = DBfetch($res)) {
+			$problems[] = [
+				'hostid' => (int) $row['hostid'],
+				'pname'  => $row['pname'],
+				'sev'    => (int) $row['severity'],
+				'clock'  => (int) $row['clock']
+			];
+		}
+
+		usort($problems, static function (array $a, array $b): int {
+			return $b['sev'] <=> $a['sev'] ?: $b['clock'] <=> $a['clock'];
+		});
+
+		$out['problems'] = $problems;
+
+		$hnames = [];
+		$res = DBselect('SELECT hostid, name FROM hosts WHERE hostid IN ('.$list.')');
+
+		while ($row = DBfetch($res)) {
+			$hnames[(int) $row['hostid']] = $row['name'];
+		}
+
+		$out['hosts'] = $hnames;
+	}
+
+	echo json_encode($out, JSON_UNESCAPED_UNICODE);
+	exit;
+}
+
 // Write actions, Super admin only, CSRF protected, JSON answers.
 if ($ajax) {
 	session_write_close();
@@ -1044,7 +1120,9 @@ $i18n = [
 	'qos_ph' => _('e.g. DSCP EF, low latency'),
 	'traffic_details' => _('Traffic details'),
 	'sampled' => _('sampled %1$s'),
-	'no_traffic' => _('No traffic data.')
+	'no_traffic' => _('No traffic data.'),
+	'notif_details' => _('Notification details'),
+	'no_problems' => _('No open problems.')
 ];
 
 $data = [
@@ -1298,6 +1376,22 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .fc-iface .mono { color: #6fc3ff; }
 		.topo .fc-clock { color: var(--text-dim); font-size: 10.5px; margin-top: 1px; }
 		.topo .fc-note { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
+
+		/* ---- notifications card (problem-count badge click) ---- */
+		.topo .probcard { width: 330px; }
+		.topo .probcard .ifc-body { max-height: 46vh; overflow-y: auto; }
+		.topo .n-badge { cursor: pointer; }
+		.topo .n-badge:hover { filter: brightness(1.2); }
+		.topo .pc-row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0 5px;
+			border-top: 1px solid var(--line-soft); font-size: 12px; }
+		.topo .pc-row:first-of-type { border-top: 0; }
+		.topo .pc-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto;
+			align-self: center; }
+		.topo .pc-body { flex: 1; min-width: 0; }
+		.topo .pc-name { color: var(--text); overflow: hidden; text-overflow: ellipsis;
+			white-space: nowrap; }
+		.topo .pc-host { color: #6fc3ff; font-size: 10.5px; margin-top: 1px; }
+		.topo .pc-age { color: var(--text-dim); font-size: 10.5px; white-space: nowrap; }
 
 		/* ---- device settings modal ---- */
 		.topo .tmodal-wrap { position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
@@ -1883,6 +1977,7 @@ function applyStatuses() {
 			if (!badge) {
 				badge = document.createElement('span');
 				badge.className = 'n-badge';
+				badge.title = T.notif_details;
 				(el.querySelector('.n-head') || el).appendChild(badge);
 			}
 
@@ -1949,6 +2044,11 @@ function closeIfcard() {
 	// a flow card and the interface card never coexist
 	if (typeof flowcard !== 'undefined' && flowcard) {
 		closeFlowCard();
+	}
+
+	// same for the notifications card
+	if (typeof probcard !== 'undefined' && probcard) {
+		closeProbCard();
 	}
 
 	selectedId = null;
@@ -2604,6 +2704,130 @@ async function openFlowCard(f) {
 	body.appendChild(lastBlock);
 }
 
+// ---- notifications card (click a node's problem-count badge) ----
+
+let probcard = null, probcardFor = null;
+
+function closeProbCard() {
+	if (probcard) {
+		probcard.remove();
+		probcard = null;
+		probcardFor = null;
+	}
+}
+
+// compact age of an open problem: 2d 4h, 3h 12m, 45m
+function fmtAge(clock) {
+	const s = Math.max(0, Math.floor(Date.now() / 1000) - clock);
+	const d = Math.floor(s / 86400);
+	const h = Math.floor((s % 86400) / 3600);
+	const m = Math.floor((s % 3600) / 60);
+
+	return (d ? d + 'd ' : '') + (h || d ? h + 'h ' : '') + m + 'm';
+}
+
+async function openProbCard(n) {
+	if (probcardFor === n.nodeid) {
+		closeProbCard();
+		return;
+	}
+
+	closeProbCard();
+	closeIfcard();
+
+	const card = document.createElement('div');
+	card.className = 'ifcard probcard';
+
+	let x = n.posx + NODE_W + 12;
+
+	if (x + 340 > canvas.scrollWidth) {
+		x = Math.max(8, n.posx - 344);
+	}
+
+	card.style.left = x + 'px';
+	card.style.top = Math.max(8, n.posy) + 'px';
+
+	const st = statuses.get(n.nodeid) || {sev: -1, cnt: 0};
+	const head = document.createElement('h4');
+	const dot = document.createElement('span');
+	dot.className = 'dot';
+	dot.style.background = sevColor(st.sev);
+	const title = document.createElement('span');
+	title.textContent = n.name;
+	const close = document.createElement('button');
+	close.type = 'button';
+	close.className = 'ifc-close';
+	close.textContent = '✕';
+	close.addEventListener('click', closeProbCard);
+	head.append(dot, title, close);
+
+	const sub = document.createElement('div');
+	sub.className = 'ifc-sub';
+	sub.textContent = T.notif_details;
+
+	const body = document.createElement('div');
+	body.className = 'ifc-body';
+	body.textContent = '…';
+
+	card.append(head, sub, body);
+	canvas.appendChild(card);
+	probcard = card;
+	probcardFor = n.nodeid;
+
+	const r = await post({mode: 'problems', nodeid: n.nodeid}, true);
+
+	if (probcard !== card) return; // closed or replaced while loading
+
+	if (!r || !r.ok) {
+		body.textContent = r && r.msg ? r.msg : T.conn_failed;
+		return;
+	}
+
+	body.textContent = '';
+
+	if (!r.problems.length) {
+		const note = document.createElement('div');
+		note.className = 'fc-note';
+		note.textContent = T.no_problems;
+		body.appendChild(note);
+		return;
+	}
+
+	// a group card lists several hosts — tag each row with its host name
+	const multi = n.type === 'group';
+
+	for (const p of r.problems) {
+		const row = document.createElement('div');
+		row.className = 'pc-row';
+
+		const sd = document.createElement('span');
+		sd.className = 'pc-dot';
+		sd.style.background = sevColor(p.sev);
+
+		const bwrap = document.createElement('div');
+		bwrap.className = 'pc-body';
+
+		const nm = document.createElement('div');
+		nm.className = 'pc-name';
+		nm.textContent = p.pname;
+		bwrap.appendChild(nm);
+
+		if (multi) {
+			const hn = document.createElement('div');
+			hn.className = 'pc-host';
+			hn.textContent = (r.hosts && r.hosts[p.hostid]) || '';
+			bwrap.appendChild(hn);
+		}
+
+		const age = document.createElement('span');
+		age.className = 'pc-age';
+		age.textContent = fmtAge(p.clock);
+
+		row.append(sd, bwrap, age);
+		body.appendChild(row);
+	}
+}
+
 // ---- drag (admin) ----
 
 let drag = null;
@@ -2746,6 +2970,20 @@ canvas.addEventListener('click', async e => {
 	}
 
 	if (!mode) {
+		// the problem-count badge opens the notification list of its node
+		const badge = e.target.closest('.n-badge');
+
+		if (badge) {
+			const nEl = badge.closest('.node, .gbox');
+			const n = nEl ? nodeById(+nEl.dataset.id) : null;
+
+			if (n) {
+				await openProbCard(n);
+			}
+
+			return;
+		}
+
 		// flow lines are painted above links, so check them first
 		const fHit = e.target.closest('.flow-hit');
 

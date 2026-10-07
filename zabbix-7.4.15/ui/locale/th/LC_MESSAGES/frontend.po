@@ -22679,3 +22679,9 @@ msgstr "บันทึกโฟลว์แล้ว"
 
 msgid "Ports or QoS text is too long."
 msgstr "ข้อความพอร์ตหรือ QoS ยาวเกินไป"
+
+msgid "Notification details"
+msgstr "รายละเอียดการแจ้งเตือน"
+
+msgid "No open problems."
+msgstr "ไม่มีปัญหาที่เปิดอยู่"
