@@ -118,13 +118,15 @@ function topoFlows(): array {
 	}
 
 	$flows = [];
-	$res = DBselect('SELECT topo_flowid AS flowid, name, enabled FROM topo_flow ORDER BY topo_flowid');
+	$res = DBselect('SELECT topo_flowid AS flowid, name, enabled, ports, qos FROM topo_flow ORDER BY topo_flowid');
 
 	while ($row = DBfetch($res, false)) {
 		$flows[(int) $row['flowid']] = [
 			'flowid'  => (int) $row['flowid'],
 			'name'    => $row['name'],
 			'enabled' => (int) $row['enabled'] ? 1 : 0,
+			'ports'   => $row['ports'] !== null ? $row['ports'] : '',
+			'qos'     => $row['qos'] !== null ? $row['qos'] : '',
 			'hops'    => []
 		];
 	}
@@ -320,17 +322,20 @@ function topoIfaces(int $hostid): array {
 	}
 
 	$values = [];
+	$clocks = [];
 
 	foreach ($by_table as $table => $itemids) {
 		if (!$itemids) {
 			continue;
 		}
 
-		$res = DBselect('SELECT DISTINCT ON (itemid) itemid, value FROM '.$table.
+		// clock rides along: the flow detail card shows when the hop was last measured
+		$res = DBselect('SELECT DISTINCT ON (itemid) itemid, value, clock FROM '.$table.
 				' WHERE itemid IN ('.implode(',', $itemids).') ORDER BY itemid, clock DESC');
 
 		while ($row = DBfetch($res)) {
 			$values[(int) $row['itemid']] = (float) $row['value'];
+			$clocks[(int) $row['itemid']] = (int) $row['clock'];
 		}
 	}
 
@@ -342,10 +347,14 @@ function topoIfaces(int $hostid): array {
 		}
 
 		if (!isset($ifaces[$item['if']])) {
-			$ifaces[$item['if']] = ['name' => $item['if'], 'in' => 0.0, 'out' => 0.0];
+			$ifaces[$item['if']] = ['name' => $item['if'], 'in' => 0.0, 'out' => 0.0, 'clock' => 0];
 		}
 
 		$ifaces[$item['if']][$item['dir']] += $values[$itemid];
+
+		if (isset($clocks[$itemid]) && $clocks[$itemid] > $ifaces[$item['if']]['clock']) {
+			$ifaces[$item['if']]['clock'] = $clocks[$itemid];
+		}
 	}
 
 	$ifaces = array_values($ifaces);
@@ -562,6 +571,92 @@ if ($ajax && getRequest('mode') === 'ifaces') {
 	exit;
 }
 
+// Read-only per-flow traffic details for the flow card: every hop node with
+// its IPs and interfaces (rates + last-sample time), and the link metadata
+// between consecutive hops.
+if ($ajax && getRequest('mode') === 'flow_detail') {
+	[$nodes, $links] = topoLoad();
+	$flows = topoFlows();
+	session_write_close();
+
+	header('Content-Type: application/json; charset=UTF-8');
+
+	$flowid = (int) getRequest('flowid', 0);
+	$flow = null;
+
+	foreach ($flows as $f) {
+		if ($f['flowid'] === $flowid) {
+			$flow = $f;
+			break;
+		}
+	}
+
+	if ($flow === null) {
+		echo json_encode(['ok' => false, 'msg' => _('The selected flow was not found.')],
+			JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+
+	$hostids = [];
+
+	foreach ($flow['hops'] as $nodeid) {
+		$n = $nodes[$nodeid] ?? null;
+
+		if ($n !== null && $n['hostid'] !== null) {
+			$hostids[$n['hostid']] = true;
+		}
+	}
+
+	$host_ips = topoHostIps($hostids);
+
+	$out_nodes = [];
+
+	foreach ($flow['hops'] as $nodeid) {
+		$n = $nodes[$nodeid] ?? null;
+
+		if ($n === null) {
+			continue;
+		}
+
+		$entry = [
+			'name'    => $n['name'],
+			'hostid'  => $n['hostid'],
+			'monsrv'  => $n['monsrv'],
+			'ips'     => $n['hostid'] !== null ? ($host_ips[$n['hostid']] ?? []) : [],
+			'ifaces'  => []
+		];
+
+		if ($n['hostid'] !== null) {
+			$entry['ifaces'] = topoIfaces($n['hostid'])['ifaces'];
+		}
+
+		$out_nodes[$nodeid] = $entry;
+	}
+
+	// service/proto of the topology link between consecutive hops, when drawn
+	$segments = [];
+
+	for ($i = 0; $i < count($flow['hops']) - 1; $i++) {
+		$a = $flow['hops'][$i];
+		$b = $flow['hops'][$i + 1];
+		$seg = ['a' => $a, 'b' => $b, 'service' => '', 'proto' => ''];
+
+		foreach ($links as $l) {
+			if (($l['a'] === $a && $l['b'] === $b) || ($l['a'] === $b && $l['b'] === $a)) {
+				$seg['service'] = $l['service'];
+				$seg['proto'] = $l['proto'];
+				break;
+			}
+		}
+
+		$segments[] = $seg;
+	}
+
+	echo json_encode(['ok' => true, 'flow' => $flow, 'nodes' => $out_nodes, 'segments' => $segments],
+		JSON_UNESCAPED_UNICODE);
+	exit;
+}
+
 // Write actions, Super admin only, CSRF protected, JSON answers.
 if ($ajax) {
 	session_write_close();
@@ -759,10 +854,16 @@ if ($ajax) {
 
 	if ($mode === 'flow_create') {
 		$name = trim(getRequest('name', ''));
+		$ports = trim(getRequest('ports', ''));
+		$qos = trim(getRequest('qos', ''));
 		$hops = array_values(array_filter(array_map('intval', explode(',', getRequest('hops', '')))));
 
 		if ($name === '' || mb_strlen($name) > 64) {
 			$reply(false, _('Flow name must be 1-64 characters.'));
+		}
+
+		if (mb_strlen($ports) > 64 || mb_strlen($qos) > 64) {
+			$reply(false, _('Ports or QoS text is too long.'));
 		}
 
 		if (count($hops) < 2) {
@@ -784,7 +885,8 @@ if ($ajax) {
 			$reply(false, _('One of the nodes in the path no longer exists.'));
 		}
 
-		$new = DBfetch(DBselect('INSERT INTO topo_flow (name) VALUES ('.zbx_dbstr($name).') RETURNING topo_flowid'));
+		$new = DBfetch(DBselect('INSERT INTO topo_flow (name, ports, qos) VALUES ('.zbx_dbstr($name).', '
+			.zbx_dbstr($ports).', '.zbx_dbstr($qos).') RETURNING topo_flowid'));
 
 		if ($new === false) {
 			$reply(false, _('Database write failed (check the DB user privileges).'));
@@ -808,6 +910,32 @@ if ($ajax) {
 
 		DBexecute('DELETE FROM topo_flow WHERE topo_flowid = '.$flowid);
 		$reply(true, _('Flow deleted.'));
+	}
+
+	if ($mode === 'flow_update') {
+		$flowid = (int) getRequest('flowid', 0);
+		$name = trim(getRequest('name', ''));
+		$ports = trim(getRequest('ports', ''));
+		$qos = trim(getRequest('qos', ''));
+
+		if ($name === '' || mb_strlen($name) > 64) {
+			$reply(false, _('Flow name must be 1-64 characters.'));
+		}
+
+		if (mb_strlen($ports) > 64 || mb_strlen($qos) > 64) {
+			$reply(false, _('Ports or QoS text is too long.'));
+		}
+
+		if (!DBfetch(DBselect('SELECT topo_flowid FROM topo_flow WHERE topo_flowid = '.$flowid))) {
+			$reply(false, _('The selected flow was not found.'));
+		}
+
+		if (!DBexecute('UPDATE topo_flow SET name = '.zbx_dbstr($name).', ports = '.zbx_dbstr($ports).
+				', qos = '.zbx_dbstr($qos).' WHERE topo_flowid = '.$flowid)) {
+			$reply(false, _('Database write failed (check the DB user privileges).'));
+		}
+
+		$reply(true, _('Flow updated.'));
 	}
 
 	if ($mode === 'flow_toggle') {
@@ -908,7 +1036,15 @@ $i18n = [
 	// custom msgids: upstream translates "On" as "บน" (position), not a toggle state
 	'on_lbl' => _('Flow on'),
 	'off_lbl' => _('Flow off'),
-	'nodes_unit' => _('nodes')
+	'nodes_unit' => _('nodes'),
+	'flow_settings' => _('Flow settings'),
+	'ports_lbl' => _('Ports / services'),
+	'ports_ph' => _('e.g. TCP/443, TCP/53'),
+	'qos_lbl' => _('ToS / QoS'),
+	'qos_ph' => _('e.g. DSCP EF, low latency'),
+	'traffic_details' => _('Traffic details'),
+	'sampled' => _('sampled %1$s'),
+	'no_traffic' => _('No traffic data.')
 ];
 
 $data = [
@@ -1058,6 +1194,8 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo svg.links { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 		.topo svg.links .link-hit { pointer-events: stroke; stroke: transparent; stroke-width: 14;
 			cursor: pointer; }
+		.topo svg.links .flow-hit { pointer-events: stroke; stroke: transparent; stroke-width: 16;
+			cursor: pointer; }
 		.topo .canvas.is-delmode svg.links .link-hit:hover { stroke: rgba(228, 89, 89, .35); }
 
 		/* ---- group boxes ---- */
@@ -1143,6 +1281,23 @@ header('Content-Type: text/html; charset=UTF-8');
 			cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
 		.topo .ifcard .ifc-gear:hover { color: var(--accent); background: var(--accent-soft); }
 		.topo .ifcard .ifc-gear + .ifc-close { margin-left: 0; }
+
+		/* ---- flow detail card ---- */
+		.topo .flowcard { width: 310px; }
+		.topo .flowcard .fc-dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+		.topo .fc-meta { color: #6fc3ff; font-size: 11.5px; margin-top: 2px; word-break: break-all; }
+		.topo .fc-sec { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line-soft);
+			font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+			color: var(--text-dim); }
+		.topo .fc-seg { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line-soft); }
+		.topo .fc-seg-name { color: var(--text); font-weight: 600; font-size: 12.5px; }
+		.topo .fc-seg-name .fc-n { color: #6fc3ff; }
+		.topo .fc-seg-ips { color: #6fc3ff; font-size: 11px; margin-top: 1px; word-break: break-all; }
+		.topo .fc-svc { color: #b9d9f5; font-size: 11px; margin-top: 1px; }
+		.topo .fc-iface { color: var(--text-dim); font-size: 11.5px; margin-top: 3px; }
+		.topo .fc-iface .mono { color: #6fc3ff; }
+		.topo .fc-clock { color: var(--text-dim); font-size: 10.5px; margin-top: 1px; }
+		.topo .fc-note { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
 
 		/* ---- device settings modal ---- */
 		.topo .tmodal-wrap { position: fixed; inset: 0; z-index: 60; display: none; place-items: center;
@@ -1293,6 +1448,10 @@ header('Content-Type: text/html; charset=UTF-8');
 			<h3><?= _('Save flow') ?></h3>
 			<label for="flow-name"><?= _('Flow name') ?></label>
 			<input type="text" id="flow-name" maxlength="64" placeholder="<?= _('e.g. Internet uplink, HR VLAN → Servers') ?>">
+			<label for="flow-ports"><?= _('Ports / services') ?></label>
+			<input type="text" id="flow-ports" maxlength="64" placeholder="<?= _('e.g. TCP/443, TCP/53') ?>">
+			<label for="flow-qos"><?= _('ToS / QoS') ?></label>
+			<input type="text" id="flow-qos" maxlength="64" placeholder="<?= _('e.g. DSCP EF, low latency') ?>">
 			<div class="tmodal-btns">
 				<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-flow"><?= _('Cancel') ?></button>
 				<button type="button" class="tbtn" id="btn-save-flow"><?= _('Save') ?></button>
@@ -1500,6 +1659,9 @@ function flowsSvg(boxes) {
 				'<animateMotion dur="'+dur+'s" begin="-'+(dur / 2).toFixed(2)+
 				's" repeatCount="indefinite" path="'+path+'"/></circle>';
 		}
+
+		// invisible wide hit path on top — clicking the flow opens its detail card
+		html += '<path class="flow-hit" data-flowid="'+f.flowid+'" d="'+path+'" fill="none"/>';
 	}
 
 	// the path being recorded right now: dashed accent line with live numbering
@@ -1784,6 +1946,11 @@ function closeIfcard() {
 		ifcardFor = null;
 	}
 
+	// a flow card and the interface card never coexist
+	if (typeof flowcard !== 'undefined' && flowcard) {
+		closeFlowCard();
+	}
+
 	selectedId = null;
 	applySelection();
 	updateGeometry();
@@ -2061,11 +2228,21 @@ function renderFlowsList() {
 
 		const name = document.createElement('span');
 		name.className = 'fname';
+		name.style.cursor = 'pointer';
+		name.title = T.traffic_details;
 		name.textContent = f.name;
+		name.addEventListener('click', () => openFlowCard(f));
 
 		const count = document.createElement('span');
 		count.className = 'fcount mono';
 		count.textContent = f.hops.length + ' ' + T.nodes_unit;
+
+		const gear = document.createElement('button');
+		gear.type = 'button';
+		gear.className = 'fdel';
+		gear.title = T.flow_settings;
+		gear.textContent = '⚙';
+		gear.addEventListener('click', () => openFlowModalUpdate(f));
 
 		const tog = document.createElement('button');
 		tog.type = 'button';
@@ -2106,7 +2283,7 @@ function renderFlowsList() {
 			}
 		});
 
-		row.append(dot, name, count, tog, del);
+		row.append(dot, name, count, tog, gear, del);
 		wrap.appendChild(row);
 	}
 }
@@ -2169,16 +2346,34 @@ document.getElementById('btn-flow-new')?.addEventListener('click', () => {
 
 document.getElementById('btn-flow-cancel')?.addEventListener('click', cancelFlowDraft);
 
-document.getElementById('btn-flow-save')?.addEventListener('click', () => {
+document.getElementById('btn-flow-save')?.addEventListener('click', openFlowModalCreate);
+
+// the flow modal serves both "save a new flow" and "edit an existing one"
+let flowModalMode = null;
+
+function openFlowModalCreate() {
 	if (!flowDraft || flowDraft.length < 2) return toast(T.flow_needs_two);
 
-	document.getElementById('flow-name').value = '';
+	flowModalMode = {type: 'create'};
+	fillFlowModal('', '', '');
+}
+
+function openFlowModalUpdate(f) {
+	flowModalMode = {type: 'update', flowid: f.flowid};
+	fillFlowModal(f.name, f.ports || '', f.qos || '');
+}
+
+function fillFlowModal(name, ports, qos) {
+	document.getElementById('flow-name').value = name;
+	document.getElementById('flow-ports').value = ports;
+	document.getElementById('flow-qos').value = qos;
 	document.getElementById('modal-flow').classList.add('is-on');
 	document.getElementById('flow-name').focus();
-});
+}
 
 function closeFlowModal() {
 	document.getElementById('modal-flow')?.classList.remove('is-on');
+	flowModalMode = null;
 }
 
 document.getElementById('btn-cancel-flow')?.addEventListener('click', closeFlowModal);
@@ -2189,14 +2384,225 @@ document.getElementById('modal-flow')?.addEventListener('click', e => {
 
 document.getElementById('btn-save-flow')?.addEventListener('click', async () => {
 	const name = document.getElementById('flow-name').value.trim();
+	const ports = document.getElementById('flow-ports').value.trim();
+	const qos = document.getElementById('flow-qos').value.trim();
 
 	if (!name) return toast(T.flow_name_needed);
 
-	const r = await post({mode: 'flow_create', name, hops: flowDraft.join(',')});
+	if (!flowModalMode) return;
+
+	let r;
+
+	if (flowModalMode.type === 'create') {
+		r = await post({mode: 'flow_create', name, ports, qos, hops: flowDraft.join(',')});
+	}
+	else {
+		r = await post({mode: 'flow_update', flowid: flowModalMode.flowid, name, ports, qos});
+	}
 
 	if (r && r.ok) location.reload();
 	if (r && !r.ok) toast(r.msg);
 });
+
+// ---- flow detail card (click a flow row or the flow line on the canvas) ----
+
+let flowcard = null, flowcardFor = null;
+
+function closeFlowCard() {
+	if (flowcard) {
+		flowcard.remove();
+		flowcard = null;
+		flowcardFor = null;
+	}
+}
+
+// ~packets per second from a bps rate (1500-byte frames) — an estimate
+function fmtPps(bps) {
+	const pps = Math.round(bps / 12000);
+
+	if (pps <= 0) return '0 pps';
+
+	return (pps >= 1000 ? (pps / 1000).toFixed(1) + 'k' : pps) + ' pps';
+}
+
+async function openFlowCard(f) {
+	if (flowcardFor === f.flowid) {
+		closeFlowCard();
+		return;
+	}
+
+	closeFlowCard();
+	closeIfcard();
+
+	const card = document.createElement('div');
+	card.className = 'ifcard flowcard';
+
+	const first = nodeById(f.hops[0]);
+
+	if (first) {
+		let x = first.posx + NODE_W + 12;
+
+		if (x + 320 > canvas.scrollWidth) {
+			x = Math.max(8, first.posx - 324);
+		}
+
+		card.style.left = x + 'px';
+		card.style.top = Math.max(8, first.posy) + 'px';
+	}
+
+	const head = document.createElement('h4');
+	const dot = document.createElement('span');
+	dot.className = 'fc-dot';
+	dot.style.background = f.color;
+	const title = document.createElement('span');
+	title.textContent = f.name;
+	head.append(dot, title);
+
+	if (DATA.is_admin) {
+		const gear = document.createElement('button');
+		gear.type = 'button';
+		gear.className = 'ifc-gear';
+		gear.title = T.flow_settings;
+		gear.textContent = '⚙';
+		gear.addEventListener('click', () => openFlowModalUpdate(f));
+		head.append(gear);
+	}
+
+	const close = document.createElement('button');
+	close.type = 'button';
+	close.className = 'ifc-close';
+	close.textContent = '✕';
+	close.addEventListener('click', closeFlowCard);
+	head.append(close);
+
+	const body = document.createElement('div');
+	body.className = 'ifc-body';
+	body.textContent = '…';
+
+	card.append(head, body);
+	canvas.appendChild(card);
+	flowcard = card;
+	flowcardFor = f.flowid;
+
+	const r = await post({mode: 'flow_detail', flowid: f.flowid}, true);
+
+	if (flowcard !== card) return; // closed or replaced while loading
+
+	if (!r || !r.ok) {
+		body.textContent = r && r.msg ? r.msg : T.conn_failed;
+		return;
+	}
+
+	body.textContent = '';
+
+	const meta = [r.flow.ports, r.flow.qos].filter(Boolean).join(' · ');
+
+	if (meta) {
+		const m = document.createElement('div');
+		m.className = 'fc-meta';
+		m.textContent = meta;
+		body.appendChild(m);
+	}
+
+	const nodesInfo = r.nodes || {};
+	const hops = r.flow.hops;
+	let shown = false;
+
+	// busiest interface of a hop: name, in/out rates, estimated packet rate, sample time
+	const addIfaceRow = (host, wrap) => {
+		const ifaces = host && host.ifaces ? host.ifaces : [];
+
+		if (!ifaces.length) {
+			if (!shown) {
+				const note = document.createElement('div');
+				note.className = 'fc-note';
+				note.textContent = T.no_traffic;
+				wrap.appendChild(note);
+				shown = true;
+			}
+
+			return;
+		}
+
+		const top = ifaces[0];
+		const line = document.createElement('div');
+		line.className = 'fc-iface';
+
+		const nm = document.createElement('span');
+		nm.className = 'mono';
+		nm.textContent = top.name + ' ';
+		line.append(nm);
+
+		const rates = document.createElement('span');
+		rates.className = 'mono';
+		rates.textContent = '↓ ' + fmtBps(+top.in) + ' ↑ ' + fmtBps(+top.out) +
+			' ~' + fmtPps((+top.in) + (+top.out));
+		line.append(rates);
+		wrap.appendChild(line);
+
+		if (top.clock) {
+			const ck = document.createElement('div');
+			ck.className = 'fc-clock';
+			ck.textContent = T.sampled.replace('%1$s',
+				new Date(top.clock * 1000).toLocaleTimeString('th-TH', {hour12: false}));
+			wrap.appendChild(ck);
+		}
+
+		shown = true;
+	};
+
+	for (let i = 0; i < hops.length - 1; i++) {
+		const a = nodesInfo[hops[i]], b = nodesInfo[hops[i + 1]];
+		const seg = r.segments ? r.segments[i] : null;
+
+		const block = document.createElement('div');
+		block.className = 'fc-seg';
+
+		const nm = document.createElement('div');
+		nm.className = 'fc-seg-name';
+		const n1 = document.createElement('span');
+		n1.className = 'fc-n';
+		n1.textContent = (i + 1) + '. ';
+		nm.append(n1, document.createTextNode((a ? a.name : '?') + '  →  '));
+		const n2 = document.createElement('span');
+		n2.className = 'fc-n';
+		n2.textContent = (i + 2) + '. ';
+		nm.append(n2, document.createTextNode(b ? b.name : '?'));
+		block.appendChild(nm);
+
+		const srcIp = a && a.ips && a.ips.length ? a.ips[0] : '—';
+		const dstIp = b && b.ips && b.ips.length ? b.ips[0] : '—';
+
+		const ips = document.createElement('div');
+		ips.className = 'fc-seg-ips mono';
+		ips.textContent = srcIp + '  →  ' + dstIp;
+		block.appendChild(ips);
+
+		if (seg && (seg.service || seg.proto)) {
+			const svc = document.createElement('div');
+			svc.className = 'fc-svc';
+			svc.textContent = [seg.service, seg.proto].filter(Boolean).join(' · ');
+			block.appendChild(svc);
+		}
+
+		addIfaceRow(a, block); // egress interface at the sending hop
+		body.appendChild(block);
+	}
+
+	// the destination hop: its ingress interface
+	const lastBlock = document.createElement('div');
+	lastBlock.className = 'fc-seg';
+	const lastTitle = document.createElement('div');
+	lastTitle.className = 'fc-seg-name';
+	const lastN = document.createElement('span');
+	lastN.className = 'fc-n';
+	lastN.textContent = hops.length + '. ';
+	const lastNode = nodesInfo[hops[hops.length - 1]];
+	lastTitle.append(lastN, document.createTextNode(lastNode ? lastNode.name : '?'));
+	lastBlock.appendChild(lastTitle);
+	addIfaceRow(lastNode, lastBlock);
+	body.appendChild(lastBlock);
+}
 
 // ---- drag (admin) ----
 
@@ -2340,6 +2746,21 @@ canvas.addEventListener('click', async e => {
 	}
 
 	if (!mode) {
+		// flow lines are painted above links, so check them first
+		const fHit = e.target.closest('.flow-hit');
+
+		if (fHit) {
+			closeIfcard();
+
+			const f = flows.find(x => x.flowid === +fHit.dataset.flowid);
+
+			if (f) {
+				await openFlowCard(f);
+			}
+
+			return;
+		}
+
 		const hit = e.target.closest('.link-hit');
 
 		if (hit) {

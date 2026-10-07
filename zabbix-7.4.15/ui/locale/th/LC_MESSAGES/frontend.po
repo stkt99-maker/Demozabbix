@@ -22649,3 +22649,33 @@ msgstr "เปิดโฟลว์แล้ว"
 
 msgid "Flow disabled."
 msgstr "ปิดโฟลว์แล้ว"
+
+msgid "Flow settings"
+msgstr "ตั้งค่าโฟลว์"
+
+msgid "Ports / services"
+msgstr "พอร์ต / บริการ"
+
+msgid "e.g. TCP/443, TCP/53"
+msgstr "เช่น TCP/443, TCP/53"
+
+msgid "ToS / QoS"
+msgstr "ToS / QoS"
+
+msgid "e.g. DSCP EF, low latency"
+msgstr "เช่น DSCP EF, ความหน่วงต่ำ"
+
+msgid "Traffic details"
+msgstr "รายละเอียดทราฟฟิก"
+
+msgid "sampled %1$s"
+msgstr "วัดล่าสุด %1$s"
+
+msgid "No traffic data."
+msgstr "ไม่มีข้อมูลทราฟฟิก"
+
+msgid "Flow updated."
+msgstr "บันทึกโฟลว์แล้ว"
+
+msgid "Ports or QoS text is too long."
+msgstr "ข้อความพอร์ตหรือ QoS ยาวเกินไป"
