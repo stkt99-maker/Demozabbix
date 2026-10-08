@@ -22752,8 +22752,8 @@ msgstr "การวิเคราะห์ทราฟฟิก"
 msgid "Traffic analytics (Demo)"
 msgstr "การวิเคราะห์ทราฟฟิก (Demo)"
 
-msgid "Synthetic demo traffic — Top-10 rankings, trends and shares."
-msgstr "ทราฟฟิกจำลองเพื่อการสาธิต — อันดับ Top 10, แนวโน้ม และสัดส่วนการใช้งาน"
+msgid "Demo traffic over the monitored Zabbix hosts — Top-10 rankings, trends and shares."
+msgstr "ทราฟฟิกสาธิตบนโฮสต์ Zabbix ที่มอนิเตอร์อยู่ — อันดับ Top 10, แนวโน้ม และสัดส่วนการใช้งาน"
 
 msgid "Time range"
 msgstr "ช่วงเวลา"

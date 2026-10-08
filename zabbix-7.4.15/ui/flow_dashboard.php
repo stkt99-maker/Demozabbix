@@ -36,10 +36,12 @@ const FLOW_WINDOWS = ['1h' => 3600, '6h' => 21600, '24h' => 86400, '7d' => 60480
 const FLOW_GBUCKET = ['1h' => 300, '6h' => 300, '24h' => 1800, '7d' => 10800];
 
 /*
-** Demo dataset catalogs. Synthetic but plausible traffic for a Thai organisation:
-** internal hosts grouped into IP groups, external services with country/city,
-** L7 applications with day/night weight profiles. The generator is the only
-** writer; these arrays are the single source of truth for the mix.
+** Demo dataset catalogs. Plausible traffic for a Thai organisation: the
+** external services (country/city) and the L7 applications (day/night weight
+** profiles) are synthetic, while the internal endpoints come from the live
+** Zabbix host inventory — name, interface IP and Zabbix host group — falling
+** back to FLOW_HOSTS when the DB has fewer than two monitored hosts. The
+** generator is the only writer; these arrays define the mix.
 */
 
 // [name, proto, day-weight, night-weight, dur min..max s, rate min..max bps, avg packet bytes]
@@ -115,7 +117,8 @@ const FLOW_DESTS = [
 	['Shenzhen supplier',  '119.145.8.22',   'CN', 'Shenzhen',   'Branch & partners',     2, ['HTTPS', 'SMTP / Exchange']]
 ];
 
-// Internal hosts: [name, ip, IP group, weight]
+// Fallback internal hosts (used when the Zabbix DB has < 2 monitored hosts):
+// [name, ip, IP group, weight]
 const FLOW_HOSTS = [
 	['PC-FIN-01',      '10.10.2.21',     'Office LAN',        3],
 	['PC-FIN-02',      '10.10.2.22',     'Office LAN',        3],
@@ -150,7 +153,8 @@ const FLOW_HOSTS = [
 	['NAS-ARCHIVE-01', '10.50.1.20',     'Backup & archive',  2]
 ];
 
-// Internal destination pools per app (int flows end here); fallback: any other group.
+// Internal destination pools per app, for the fallback catalog only (int
+// flows end here); without a pool the destination is any other internal host.
 const FLOW_INT_DST = [
 	'SMB file sharing' => ['SRV-FILE-01', 'NAS-ARCHIVE-01'],
 	'MySQL'            => ['SRV-DB-01', 'SRV-DB-02'],
@@ -190,11 +194,39 @@ function flowTableExists(): bool {
 }
 
 /**
- * Deterministically generate all flow records of one 5-minute bucket.
- * A pure function of $bstart: any worker, in any order, produces the exact
- * same rows for the same bucket (mt_srand seeded by the bucket timestamp).
+ * Monitored hosts from the live Zabbix inventory, in the FLOW_HOSTS shape:
+ * [name, interface IP, Zabbix host group, weight]. A host contributes its
+ * main interface IP and its first host group; empty when the DB has none.
  */
-function flowBucketGen(int $bstart): array {
+function flowDbHosts(): array {
+	$rows = [];
+	$res = DBselect(
+		'SELECT h.name AS name, MIN(i.ip) AS ip, MIN(g.name) AS grp'.
+		' FROM hosts h'.
+		' JOIN interface i ON i.hostid=h.hostid AND i.main=1'.
+		' JOIN hosts_groups hg ON hg.hostid=h.hostid'.
+		' JOIN hstgrp g ON g.groupid=hg.groupid'.
+		' WHERE h.status='.HOST_STATUS_MONITORED.' AND i.ip<>\'\''.
+		' AND i.ip NOT LIKE \'127.%\''.
+		' GROUP BY h.name ORDER BY h.name'
+	);
+
+	while ($row = DBfetch($res)) {
+		$rows[] = [$row['name'], $row['ip'], $row['grp'], 3];
+	}
+
+	return $rows;
+}
+
+/**
+ * Deterministically generate all flow records of one 5-minute bucket.
+ * A pure function of $bstart (and of the passed host catalog): any worker,
+ * in any order, produces the exact same rows for the same bucket (mt_srand
+ * seeded by the bucket timestamp). $hosts_def is the internal endpoint
+ * catalog in the FLOW_HOSTS shape; $pools are the optional per-app affinity
+ * pools of that catalog (empty when hosts come from the live inventory).
+ */
+function flowBucketGen(int $bstart, array $hosts_def, array $pools): array {
 	mt_srand($bstart ^ FLOW_LOCK_KEY);
 
 	$hour = intdiv($bstart + 7 * 3600, 3600) % 24;	// Asia/Bangkok, no DST
@@ -223,10 +255,12 @@ function flowBucketGen(int $bstart): array {
 
 	// internal hosts indexed by name; weighted list for generic picks
 	$hosts = [];
-	foreach (FLOW_HOSTS as $h) {
+
+	foreach ($hosts_def as $h) {
 		$hosts[$h[0]] = ['ip' => $h[1], 'group' => $h[2], 'weight' => $h[3]];
 	}
-	$host_weights = array_column(FLOW_HOSTS, 3);
+
+	$host_weights = array_column($hosts_def, 3);
 
 	$rows = [];
 	for ($seq = 0; $seq < $count; $seq++) {
@@ -238,8 +272,8 @@ function flowBucketGen(int $bstart): array {
 			$app = FLOW_APPS[$ai][0];
 			$proto = FLOW_APPS[$ai][1];
 
-			$src = FLOW_HOSTS[flowPick($host_weights)];
-			$pool = FLOW_INT_DST[$app] ?? null;
+			$src = $hosts_def[flowPick($host_weights)];
+			$pool = $pools[$app] ?? null;
 
 			// affinity pool minus the source host itself; falls back to any
 			// other internal host when the pool is a single self-hit
@@ -252,7 +286,7 @@ function flowBucketGen(int $bstart): array {
 			}
 			else {
 				do {
-					$dst = FLOW_HOSTS[flowPick($host_weights)];
+					$dst = $hosts_def[flowPick($host_weights)];
 				} while ($dst[0] === $src[0]);
 				$dst_name = $dst[0];
 			}
@@ -278,7 +312,7 @@ function flowBucketGen(int $bstart): array {
 			$di = $cand[flowPick(array_map(static fn($i) => FLOW_DESTS[$i][5], $cand))];
 			$dest = FLOW_DESTS[$di];
 
-			$internal = FLOW_HOSTS[flowPick($host_weights)];
+			$internal = $hosts_def[flowPick($host_weights)];
 			if ($dir === 'out') {
 				$src_name = $internal[0];
 				$src_ip = $internal[1];
@@ -446,12 +480,19 @@ function flowTopUp(): int {
 	$added = 0;
 	$buf = [];
 
+	// internal endpoints come from the live Zabbix inventory; fall back to the
+	// demo catalog when there are fewer than two monitored hosts to talk to
+	$db_hosts = flowDbHosts();
+	$use_demo = count($db_hosts) < 2;
+	$hosts_def = $use_demo ? FLOW_HOSTS : $db_hosts;
+	$pools = $use_demo ? FLOW_INT_DST : [];
+
 	for ($b = $start; $b <= $now_b; $b += FLOW_BUCKET) {
 		if ($b < $now_b - FLOW_RETENTION) {
 			continue;
 		}
 
-		foreach (flowBucketGen($b) as $r) {
+		foreach (flowBucketGen($b, $hosts_def, $pools) as $r) {
 			$buf[] = $r;
 		}
 
@@ -845,7 +886,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		.fdash .dlegend .dv { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
 		/* ---- top-10 tables ---- */
-		.fdash .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+		.fdash .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
 			gap: 12px; padding: 12px 18px 18px; }
 		.fdash .tcard { background: var(--surface); border: 1px solid var(--line-soft);
 			border-radius: 10px; padding: 12px 14px 8px; }
@@ -893,6 +934,26 @@ header('Content-Type: text/html; charset=UTF-8');
 		@media (prefers-reduced-motion: reduce) {
 			.fdash * { transition: none !important; }
 		}
+
+		/* ---- phone layout: full-width segmented controls, 2-col KPIs,
+		   stacked donut, tighter table numerics ---- */
+		@media (max-width: 560px) {
+			.fdash .topbar { padding: 10px 12px; }
+			.fdash .toolbar { padding: 10px 12px 0; gap: 10px; }
+			.fdash .toolbar .lbl { flex-basis: 100%; }
+			.fdash .seg { display: flex; width: 100%; }
+			.fdash .seg button { flex: 1; min-width: 0; padding: 7px 8px; font-size: 12.5px;
+				overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			.fdash .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 12px 0; }
+			.fdash .kpi .val { font-size: 19px; }
+			.fdash .charts { padding: 10px 12px 0; }
+			.fdash .tables { padding: 10px 12px 12px; }
+			.fdash .donutwrap { flex-direction: column; align-items: stretch; }
+			.fdash .donutwrap svg { width: 160px; height: 160px; margin: 0 auto; }
+			.fdash .thead, .fdash .trow { grid-template-columns: 18px minmax(0, 1fr) 62px 62px 40px;
+				gap: 7px; }
+			.fdash .empty { margin: 60px 12px; }
+		}
 	</style>
 </head>
 <body>
@@ -903,7 +964,7 @@ header('Content-Type: text/html; charset=UTF-8');
 			stroke-linecap="round" stroke-linejoin="round"/></svg>
 		<div>
 			<h1><?= _('Traffic analytics') ?></h1>
-			<div class="sub"><?= _('Synthetic demo traffic — Top-10 rankings, trends and shares.') ?></div>
+			<div class="sub"><?= _('Demo traffic over the monitored Zabbix hosts — Top-10 rankings, trends and shares.') ?></div>
 		</div>
 		<div class="spacer"></div>
 		<span class="stamp" id="stamp"></span>
@@ -1008,6 +1069,7 @@ const COUNTRY = {
 };
 
 let state = {window: DATA.window, sort: DATA.sort};
+let lastData = null;
 let inflight = false;
 
 const escHtml = s => String(s).replace(/[&<>"']/g,
@@ -1132,6 +1194,14 @@ function peakBps(d) {
 
 // ---- stacked area chart ------------------------------------------------------
 
+// chart geometry per available width: narrow containers get a taller, tighter
+// plot with fewer, bigger-labelled ticks instead of a proportionally shrunk one
+function areaGeom(wpx) {
+	return wpx < 640
+		? {W: 560, H: 340, M: {l: 48, r: 10, t: 12, b: 26}, ticks: 3, ydiv: 3, font: 10}
+		: {W: 900, H: 300, M: {l: 58, r: 14, t: 12, b: 28}, ticks: 5, ydiv: 4, font: 11};
+}
+
 function renderArea(d) {
 	const svg = document.getElementById('areachart');
 	const rows = d.series.rows;
@@ -1148,7 +1218,10 @@ function renderArea(d) {
 		return;
 	}
 
-	const W = 900, H = 300, M = {l: 58, r: 14, t: 12, b: 28};
+	const G = areaGeom(document.getElementById('areabox').clientWidth || 900);
+	const W = G.W, H = G.H, M = G.M;
+	svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
 	const pw = W - M.l - M.r, ph = H - M.t - M.b;
 
 	// y-max: nice-rounded maximum of the stacked totals
@@ -1175,19 +1248,19 @@ function renderArea(d) {
 	let g = '<g class="plot">';
 
 	// hairline gridlines + y ticks (clean numbers, text tokens)
-	for (let i = 0; i <= 4; i++) {
-		const val = ymax * i / 4;
+	for (let i = 0; i <= G.ydiv; i++) {
+		const val = ymax * i / G.ydiv;
 		const yy = y(val);
 
 		g += '<line x1="'+M.l+'" y1="'+yy+'" x2="'+(W-M.r)+'" y2="'+yy+
 			'" stroke="#1a2942" stroke-width="1"/>';
-		g += '<text x="'+(M.l-8)+'" y="'+(yy+4)+'" text-anchor="end" font-size="11" '+
+		g += '<text x="'+(M.l-8)+'" y="'+(yy+4)+'" text-anchor="end" font-size="'+G.font+'" '+
 			'fill="#8296b3" style="font-variant-numeric:tabular-nums">'+fmtBps(val)+'</text>';
 	}
 
-	// x ticks: 5-6 readable positions across the window
+	// x ticks: readable positions across the window
 	const span = rows[rows.length - 1].t - t0;
-	const tickn = 5;
+	const tickn = G.ticks;
 
 	for (let i = 0; i <= tickn; i++) {
 		const t = t0 + Math.round(span * i / tickn);
@@ -1195,7 +1268,7 @@ function renderArea(d) {
 
 		g += '<line x1="'+xx+'" y1="'+(M.t+ph)+'" x2="'+xx+'" y2="'+(M.t+ph+4)+
 			'" stroke="#24344f" stroke-width="1"/>';
-		g += '<text x="'+xx+'" y="'+(M.t+ph+18)+'" text-anchor="middle" font-size="11" '+
+		g += '<text x="'+xx+'" y="'+(M.t+ph+18)+'" text-anchor="middle" font-size="'+G.font+'" '+
 			'fill="#8296b3">'+(d.window === '7d' ? fmtDay(t) : fmtTime(t))+'</text>';
 	}
 
@@ -1321,7 +1394,7 @@ function attachAreaHover(svg, rows, cum, names, x, y, M, W, H, tg) {
 		// keep the tooltip inside the card
 		const boxr = box.getBoundingClientRect();
 		const px = x(t) / W * boxr.width;
-		tip.style.left = Math.min(boxr.width - 180, Math.max(0, px + 12)) + 'px';
+		tip.style.left = Math.max(0, Math.min(boxr.width - 180, px + 12)) + 'px';
 		tip.style.top = '8px';
 	};
 
@@ -1568,6 +1641,7 @@ function stamp(d) {
 }
 
 function buildAll(d) {
+	lastData = d;
 	document.getElementById('root').classList.remove('dim');
 	renderKpis(d);
 	renderArea(d);
@@ -1644,6 +1718,17 @@ if (!DATA.no_table) {
 
 	// auto-refresh every 60 s (also advances the demo dataset server-side)
 	setInterval(() => refresh(true), 60000);
+
+	// re-fit the area chart when the layout width changes (desktop resize,
+	// orientation flip) — donut/KPIs reflow via CSS alone
+	let rzTimer;
+
+	window.addEventListener('resize', () => {
+		clearTimeout(rzTimer);
+		rzTimer = setTimeout(() => {
+			if (lastData) renderArea(lastData);
+		}, 150);
+	});
 }
 </script>
 </body>
