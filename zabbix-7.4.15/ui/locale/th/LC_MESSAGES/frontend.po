@@ -22745,3 +22745,111 @@ msgstr "ไม่มีรายการที่ขึ้นอยู่"
 
 msgid "No services yet."
 msgstr "ยังไม่มีบริการ"
+
+msgid "Traffic analytics"
+msgstr "การวิเคราะห์ทราฟฟิก"
+
+msgid "Traffic analytics (Demo)"
+msgstr "การวิเคราะห์ทราฟฟิก (Demo)"
+
+msgid "Synthetic demo traffic — Top-10 rankings, trends and shares."
+msgstr "ทราฟฟิกจำลองเพื่อการสาธิต — อันดับ Top 10, แนวโน้ม และสัดส่วนการใช้งาน"
+
+msgid "Time range"
+msgstr "ช่วงเวลา"
+
+msgid "Last hour"
+msgstr "1 ชั่วโมงล่าสุด"
+
+msgid "Last 6 hours"
+msgstr "6 ชั่วโมงล่าสุด"
+
+msgid "Last 24 hours"
+msgstr "24 ชั่วโมงล่าสุด"
+
+msgid "Last 7 days"
+msgstr "7 วันล่าสุด"
+
+msgid "Sort by"
+msgstr "เรียงตาม"
+
+msgid "Traffic volume"
+msgstr "ปริมาณทราฟฟิก"
+
+msgid "Byte count"
+msgstr "ปริมาณไบต์"
+
+msgid "Total traffic"
+msgstr "ทราฟฟิกรวม"
+
+msgid "Average rate"
+msgstr "อัตราเฉลี่ย"
+
+msgid "Flows"
+msgstr "โฟลว์"
+
+msgid "Packets"
+msgstr "แพ็กเกต"
+
+msgid "Top application"
+msgstr "แอปพลิเคชันอันดับต้น"
+
+msgid "Active exporters"
+msgstr "อุปกรณ์ส่งโฟลว์ที่ทำงาน"
+
+msgid "Countries reached"
+msgstr "ประเทศปลายทาง"
+
+msgid "Traffic over time"
+msgstr "ทราฟฟิกตามช่วงเวลา"
+
+msgid "by IP group"
+msgstr "แยกตามกลุ่ม IP"
+
+msgid "Share of traffic"
+msgstr "สัดส่วนทราฟฟิก"
+
+msgid "peak %1$s"
+msgstr "สูงสุด %1$s"
+
+msgid "Top sources"
+msgstr "แหล่งทราฟฟิก 10 อันดับ"
+
+msgid "Top destinations"
+msgstr "ปลายทาง 10 อันดับ"
+
+msgid "Top applications"
+msgstr "แอปพลิเคชัน 10 อันดับ"
+
+msgid "Top countries"
+msgstr "ประเทศ 10 อันดับ"
+
+msgid "Top cities"
+msgstr "เมือง 10 อันดับ"
+
+msgid "Top exporters"
+msgstr "อุปกรณ์ส่งโฟลว์ 10 อันดับ"
+
+msgid "Top IP groups"
+msgstr "กลุ่ม IP 10 อันดับ"
+
+msgid "Counted for both endpoints of each flow."
+msgstr "นับจากทั้งสองฝั่งของแต่ละโฟลว์"
+
+msgid "Volume"
+msgstr "ปริมาณ"
+
+msgid "Bytes"
+msgstr "ไบต์"
+
+msgid "No data for this range."
+msgstr "ไม่มีข้อมูลในช่วงนี้"
+
+msgid "Demo table not found — run flow_dashboard.sql on the database first."
+msgstr "ไม่พบตารางสาธิต — ให้รัน flow_dashboard.sql บนฐานข้อมูลก่อน"
+
+msgid "Connection lost — retrying."
+msgstr "การเชื่อมต่อขาด — กำลังลองใหม่อีกครั้ง"
+
+msgid "Updated %1$s"
+msgstr "อัปเดต %1$s"
