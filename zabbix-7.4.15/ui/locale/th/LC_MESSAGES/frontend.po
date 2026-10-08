@@ -22853,3 +22853,21 @@ msgstr "การเชื่อมต่อขาด — กำลังลอ�
 
 msgid "Updated %1$s"
 msgstr "อัปเดต %1$s"
+
+msgid "Live interface traffic"
+msgstr "ทราฟฟิกอินเทอร์เฟซแบบเรียลไทม์"
+
+msgid "in / out, straight from Zabbix history"
+msgstr "เข้า / ออก อ่านตรงจากประวัติของ Zabbix"
+
+msgid "No monitored host exposes interface traffic items."
+msgstr "ไม่มีโฮสต์ที่มอนิเตอร์อยู่ซึ่งมีไอเท็มวัดทราฟฟิกอินเทอร์เฟซ"
+
+msgid "just now"
+msgstr "เมื่อสักครู่"
+
+msgid "%1$s ago"
+msgstr "%1$s ที่แล้ว"
+
+msgid "Demo traffic over the monitored Zabbix hosts — anchored to real interface metrics where available."
+msgstr "ทราฟฟิกสาธิตบนโฮสต์ Zabbix ที่มอนิเตอร์อยู่ — ปริมาณอิงตัวชี้วัดอินเทอร์เฟซจริงเมื่อมีข้อมูล"

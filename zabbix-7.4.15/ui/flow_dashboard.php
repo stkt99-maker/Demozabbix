@@ -38,10 +38,12 @@ const FLOW_GBUCKET = ['1h' => 300, '6h' => 300, '24h' => 1800, '7d' => 10800];
 /*
 ** Demo dataset catalogs. Plausible traffic for a Thai organisation: the
 ** external services (country/city) and the L7 applications (day/night weight
-** profiles) are synthetic, while the internal endpoints come from the live
-** Zabbix host inventory — name, interface IP and Zabbix host group — falling
-** back to FLOW_HOSTS when the DB has fewer than two monitored hosts. The
-** generator is the only writer; these arrays define the mix.
+** profiles) are synthetic, while the internal endpoints are the live Zabbix
+** host inventory (real hosts first, LLD prototype stubs filtered out)
+** merged with FLOW_HOSTS so the demo organisation stays busy. Real hosts'
+** flow volumes are anchored to the interface traffic Zabbix actually
+** measured (flowRealRates); everything else stays demo. The generator is
+** the only writer; these arrays define the mix.
 */
 
 // [name, proto, day-weight, night-weight, dur min..max s, rate min..max bps, avg packet bytes]
@@ -194,9 +196,13 @@ function flowTableExists(): bool {
 }
 
 /**
- * Monitored hosts from the live Zabbix inventory, in the FLOW_HOSTS shape:
- * [name, interface IP, Zabbix host group, weight]. A host contributes its
- * main interface IP and its first host group; empty when the DB has none.
+ * Monitored hosts from the live Zabbix inventory: [name, interface IP, Zabbix
+ * host group, weight, real]. A host contributes its main interface IP and its
+ * first host group. LLD prototype leftovers (names/IPs that are still literal
+ * {#MACRO} strings) are excluded, and the Zabbix server itself — whose only
+ * interface is 127.0.0.1 — stays in: it is a real endpoint with the deepest
+ * interface history. The last element marks rows the generator will anchor
+ * to real interface traffic. Empty when the DB has no qualifying host.
  */
 function flowDbHosts(): array {
 	$rows = [];
@@ -207,13 +213,160 @@ function flowDbHosts(): array {
 		' JOIN hosts_groups hg ON hg.hostid=h.hostid'.
 		' JOIN hstgrp g ON g.groupid=hg.groupid'.
 		' WHERE h.status='.HOST_STATUS_MONITORED.' AND i.ip<>\'\''.
-		' AND i.ip NOT LIKE \'127.%\''.
+		' AND h.name NOT LIKE \'%{#%\''.
+		' AND i.ip NOT LIKE \'%{#%\''.
 		' GROUP BY h.name ORDER BY h.name'
 	);
 
 	while ($row = DBfetch($res)) {
-		$rows[] = [$row['name'], $row['ip'], $row['grp'], 3];
+		$rows[] = [$row['name'], $row['ip'], $row['grp'], 3, true];
 	}
+
+	return $rows;
+}
+
+/**
+ * Hybrid endpoint catalog: the real Zabbix hosts first (they win name
+ * collisions), then the demo catalog so the demo organisation stays busy.
+ * Every row is normalized to [name, ip, group, weight, real].
+ */
+function flowMergeHosts(array $real, array $demo): array {
+	$seen = [];
+	$rows = [];
+
+	foreach (array_merge($real, $demo) as $h) {
+		if (isset($seen[$h[0]])) {
+			continue;
+		}
+
+		$seen[$h[0]] = true;
+		$rows[] = [$h[0], $h[1], $h[2], $h[3], !empty($h[4])];
+	}
+
+	return $rows;
+}
+
+/**
+ * Real per-bucket in/out bps for the hosts that actually expose interface
+ * traffic items (net.if.in / net.if.out — uint64 bps after preprocessing),
+ * returned as [host_name][bucket_start] = ['in' => bps, 'out' => bps] for the
+ * requested bucket range. Each bucket takes the latest sample at or before
+ * the bucket end within a 900 s lookback (agent intervals run 1-3 min, so
+ * the lookback fills buckets without a sample of their own), summed across
+ * the host's non-loopback interfaces. Hosts or buckets without data are
+ * simply absent — the generator falls back to synthetic values there.
+ */
+function flowRealRates(int $from_b, int $to_b): array {
+	$res = DBselect(
+		'SELECT i.itemid, i.hostid, h.name AS host, i.key_ AS key_, hu.clock, hu.value'.
+		' FROM items i'.
+		' JOIN hosts h ON h.hostid=i.hostid AND h.status='.HOST_STATUS_MONITORED.
+		' JOIN history_uint hu ON hu.itemid=i.itemid'.
+		' WHERE i.status=0 AND i.value_type=3'.
+		' AND (i.key_ LIKE \'net.if.in[%\' OR i.key_ LIKE \'net.if.out[%\')'.
+		' AND i.key_ NOT LIKE \'%dropped%\' AND i.key_ NOT LIKE \'%errors%\''.
+		' AND i.key_ NOT LIKE \'%{#%\''.
+		' AND i.key_ NOT LIKE \'%"lo"%\''.
+		' AND hu.clock >= '.($from_b - 900).' AND hu.clock <= '.$to_b.
+		' ORDER BY i.itemid, hu.clock'
+	);
+
+	$meta = [];	// itemid => [host name, in|out]
+	$pts = [];	// itemid => time-ordered [clock, value] samples
+
+	while ($row = DBfetch($res)) {
+		$meta[$row['itemid']] = [$row['host'],
+			str_starts_with($row['key_'], 'net.if.in[') ? 'in' : 'out'];
+		$pts[$row['itemid']][] = [(int) $row['clock'], (int) $row['value']];
+	}
+
+	$rates = [];
+
+	foreach ($pts as $itemid => $list) {
+		[$host, $dir] = $meta[$itemid];
+		$n = count($list);
+		$pi = -1;	// index of the latest sample at or before the bucket end
+
+		for ($b = $from_b; $b <= $to_b; $b += FLOW_BUCKET) {
+			while ($pi + 1 < $n && $list[$pi + 1][0] <= $b) {
+				$pi++;
+			}
+
+			if ($pi >= 0 && $list[$pi][0] > $b - 900) {
+				$rates[$host][$b][$dir] = ($rates[$host][$b][$dir] ?? 0) + $list[$pi][1];
+			}
+		}
+	}
+
+	return $rates;
+}
+
+/**
+ * Current in/out bps per host that exposes interface traffic items — read
+ * straight from Zabbix history with the latest-value-per-item pattern
+ * (topo_tree.php uses the same). Returns [{name, group, ip, in_bps, out_bps,
+ * clock}] sorted by total rate; clock is the freshest sample of that host.
+ */
+function flowLive(): array {
+	$meta = [];
+	$res = DBselect(
+		'SELECT i.itemid, h.name AS host, i.key_ AS key_, MIN(g.name) AS grp, MIN(ii.ip) AS ip'.
+		' FROM items i'.
+		' JOIN hosts h ON h.hostid=i.hostid AND h.status='.HOST_STATUS_MONITORED.
+		' LEFT JOIN hosts_groups hg ON hg.hostid=h.hostid'.
+		' LEFT JOIN hstgrp g ON g.groupid=hg.groupid'.
+		' LEFT JOIN interface ii ON ii.hostid=h.hostid AND ii.main=1'.
+		' WHERE i.status=0 AND i.value_type=3'.
+		' AND (i.key_ LIKE \'net.if.in[%\' OR i.key_ LIKE \'net.if.out[%\')'.
+		' AND i.key_ NOT LIKE \'%dropped%\' AND i.key_ NOT LIKE \'%errors%\''.
+		' AND i.key_ NOT LIKE \'%{#%\''.
+		' AND i.key_ NOT LIKE \'%"lo"%\''.
+		' GROUP BY i.itemid, h.name, i.key_'
+	);
+
+	while ($row = DBfetch($res)) {
+		$meta[$row['itemid']] = $row;
+	}
+
+	if (!$meta) {
+		return [];
+	}
+
+	$ids = implode(',', array_map('intval', array_keys($meta)));
+	$res = DBselect('SELECT DISTINCT ON (itemid) itemid, value, clock FROM history_uint'.
+		' WHERE itemid IN ('.$ids.') AND clock >= '.(time() - 86400).
+		' ORDER BY itemid, clock DESC'
+	);
+
+	$out = [];
+
+	while ($row = DBfetch($res)) {
+		$m = $meta[$row['itemid']];
+		$dir = str_starts_with($m['key_'], 'net.if.in[') ? 'in' : 'out';
+
+		if (!isset($out[$m['host']])) {
+			$out[$m['host']] = ['name' => $m['host'], 'group' => $m['grp'], 'ip' => $m['ip'],
+				'in' => 0, 'out' => 0, 'clock' => 0];
+		}
+
+		$out[$m['host']][$dir] += (int) $row['value'];
+		$out[$m['host']]['clock'] = max($out[$m['host']]['clock'], (int) $row['clock']);
+	}
+
+	$rows = [];
+
+	foreach ($out as $h) {
+		// DBfetch maps NULL to '0' — a host without group/interface would
+		// render as "0 · 0"; show empty instead
+		$ip = $h['ip'] === '0' ? '' : $h['ip'];
+		$grp = $h['group'] === '0' ? '' : $h['group'];
+
+		$rows[] = ['name' => $h['name'], 'group' => $grp, 'ip' => $ip,
+			'in_bps' => $h['in'], 'out_bps' => $h['out'], 'clock' => $h['clock']];
+	}
+
+	usort($rows, static fn($a, $b) =>
+		($b['in_bps'] + $b['out_bps']) <=> ($a['in_bps'] + $a['out_bps']));
 
 	return $rows;
 }
@@ -223,10 +376,15 @@ function flowDbHosts(): array {
  * A pure function of $bstart (and of the passed host catalog): any worker,
  * in any order, produces the exact same rows for the same bucket (mt_srand
  * seeded by the bucket timestamp). $hosts_def is the internal endpoint
- * catalog in the FLOW_HOSTS shape; $pools are the optional per-app affinity
- * pools of that catalog (empty when hosts come from the live inventory).
+ * catalog in the [name, ip, group, weight, real] shape; $pools are the
+ * per-app affinity pools (demo catalog names — they still resolve against
+ * the hybrid catalog). $real carries real per-bucket in/out bps from
+ * flowRealRates(): hosts with an entry get their flow volumes scaled to the
+ * interface traffic Zabbix actually measured (and a shaped flow appended
+ * when the random pass gave them none); hosts without an entry stay
+ * purely synthetic.
  */
-function flowBucketGen(int $bstart, array $hosts_def, array $pools): array {
+function flowBucketGen(int $bstart, array $hosts_def, array $pools, array $real = []): array {
 	mt_srand($bstart ^ FLOW_LOCK_KEY);
 
 	$hour = intdiv($bstart + 7 * 3600, 3600) % 24;	// Asia/Bangkok, no DST
@@ -384,6 +542,93 @@ function flowBucketGen(int $bstart, array $hosts_def, array $pools): array {
 		];
 	}
 
+	// real-data anchoring: scale each live-Zabbix host's flows so its bucket
+	// totals match the interface traffic Zabbix measured; internal<->internal
+	// flows stay synthetic (a demo approximation). Hosts are processed in
+	// fixed name order and appended rows draw from the same seeded stream
+	// after the main loop, so the result stays a pure function of the inputs.
+	if ($real) {
+		ksort($real);
+		$seqn = $count;
+
+		foreach ($real as $host => $rb) {
+			$rc = $rb[$bstart] ?? null;
+
+			if ($rc === null || !isset($hosts[$host])) {
+				continue;
+			}
+
+			foreach (['out' => 'src_name', 'in' => 'dst_name'] as $dir => $side) {
+				$target = (int) round((int) ($rc[$dir] ?? 0) * FLOW_BUCKET / 8);
+
+				if ($target <= 0) {
+					continue;
+				}
+
+				$idxs = [];
+				$sum = 0;
+
+				foreach ($rows as $i => $r) {
+					if ($r['dir'] === $dir && $r[$side] === $host) {
+						$idxs[] = $i;
+						$sum += $r['bytes'];
+					}
+				}
+
+				if ($idxs) {
+					// exact redistribution: no clamp — synthetic per-flow bytes
+					// swing over orders of magnitude while the real targets sit
+					// in between, so any floor/ceiling would miss the totals
+					$f = $target / max(1, $sum);
+
+					foreach ($idxs as $i) {
+						$rows[$i]['bytes'] = (int) max(1, (int) round($rows[$i]['bytes'] * $f));
+						$rows[$i]['packets'] = (int) max(1, (int) round($rows[$i]['packets'] * $f));
+					}
+				}
+				else {
+					$ai2 = flowPick($ext_apps);
+					$cand2 = $dests_by_app[FLOW_APPS[$ai2][0]] ?? $dests_by_app['HTTPS'];
+					$di2 = $cand2[flowPick(array_map(static fn($i) => FLOW_DESTS[$i][5], $cand2))];
+					$dest2 = FLOW_DESTS[$di2];
+					$dur2 = mt_rand(FLOW_APPS[$ai2][4], FLOW_APPS[$ai2][5]);
+					$u2 = mt_rand() / mt_getrandmax();
+
+					$host_side = ['ip' => $hosts[$host]['ip'], 'name' => $host,
+						'country' => '', 'city' => '', 'group' => $hosts[$host]['group']];
+					$dest_side = ['ip' => $dest2[1], 'name' => $dest2[0],
+						'country' => $dest2[2], 'city' => $dest2[3], 'group' => $dest2[4]];
+					$src_side = ($dir === 'out') ? $host_side : $dest_side;
+					$dst_side = ($dir === 'out') ? $dest_side : $host_side;
+
+					$rows[] = [
+						'bstart' => $bstart,
+						'seq' => $seqn++,
+						'dur' => $dur2,
+						'dir' => $dir,
+						'src_ip' => $src_side['ip'],
+						'dst_ip' => $dst_side['ip'],
+						'src_name' => $src_side['name'],
+						'dst_name' => $dst_side['name'],
+						'src_country' => $src_side['country'],
+						'dst_country' => $dst_side['country'],
+						'src_city' => $src_side['city'],
+						'dst_city' => $dst_side['city'],
+						'src_group' => $src_side['group'],
+						'dst_group' => $dst_side['group'],
+						'ext_country' => $dest2[2],
+						'ext_city' => $dest2[3],
+						'app' => FLOW_APPS[$ai2][0],
+						'proto' => FLOW_APPS[$ai2][1],
+						'exporter' => FLOW_EXPORTERS_EDGE[mt_rand(0, count(FLOW_EXPORTERS_EDGE) - 1)],
+						'bytes' => $target,
+						'packets' => (int) max(1, (int) round($target / FLOW_APPS[$ai2][8] * (0.8 + 0.4 * $u2)))
+					];
+				}
+			}
+		}
+	}
+
 	return $rows;
 }
 
@@ -480,19 +725,34 @@ function flowTopUp(): int {
 	$added = 0;
 	$buf = [];
 
-	// internal endpoints come from the live Zabbix inventory; fall back to the
-	// demo catalog when there are fewer than two monitored hosts to talk to
+	// internal endpoints come from the live Zabbix inventory, merged with the
+	// demo catalog so the demo organisation stays busy; fall back to the demo
+	// catalog alone when there are fewer than two monitored hosts to talk to
 	$db_hosts = flowDbHosts();
 	$use_demo = count($db_hosts) < 2;
-	$hosts_def = $use_demo ? FLOW_HOSTS : $db_hosts;
-	$pools = $use_demo ? FLOW_INT_DST : [];
+	$hosts_def = flowMergeHosts($use_demo ? [] : $db_hosts, FLOW_HOSTS);
+	$pools = FLOW_INT_DST;
+
+	// real hosts' flow volumes are anchored to the interface traffic Zabbix
+	// actually measured in these buckets (empty array → purely synthetic)
+	$real = [];
+
+	if (!$use_demo) {
+		foreach ($hosts_def as $h) {
+			if ($h[4]) {
+				$real = flowRealRates($start, $now_b);
+
+				break;
+			}
+		}
+	}
 
 	for ($b = $start; $b <= $now_b; $b += FLOW_BUCKET) {
 		if ($b < $now_b - FLOW_RETENTION) {
 			continue;
 		}
 
-		foreach (flowBucketGen($b, $hosts_def, $pools) as $r) {
+		foreach (flowBucketGen($b, $hosts_def, $pools, $real) as $r) {
 			$buf[] = $r;
 		}
 
@@ -698,6 +958,7 @@ if ($has_table && getRequest('ajax') === '1' && getRequest('mode') === 'data') {
 	$added = flowTopUp();
 	$data = flowData($window, $sort);
 	$data['buckets_added'] = $added;
+	$data['live'] = flowLive();
 
 	session_write_close();
 
@@ -722,6 +983,7 @@ $data = [
 		'countries' => 0, 'top_app' => '', 'top_app_share' => 0],
 	'series' => ['names' => [], 'rows' => []],
 	'donut' => [],
+	'live' => [],
 	'tables' => ['src' => [], 'dst' => [], 'app' => [], 'country' => [], 'city' => [],
 		'exporter' => [], 'group' => []]
 ];
@@ -730,6 +992,7 @@ if ($has_table) {
 	$added = flowTopUp();
 	$data = flowData($window, $sort);
 	$data['buckets_added'] = $added;
+	$data['live'] = flowLive();
 }
 
 // UI strings for the client-side script, translated by the user's language.
@@ -766,6 +1029,11 @@ $i18n = [
 	'col_volume' => _('Volume'),
 	'col_bytes' => _('Bytes'),
 	'col_flows' => _('Flows'),
+	'live_title' => _('Live interface traffic'),
+	'live_sub' => _('in / out, straight from Zabbix history'),
+	'live_none' => _('No monitored host exposes interface traffic items.'),
+	'age_now' => _('just now'),
+	'age_ago' => _('%1$s ago'),
 	'no_data' => _('No data for this range.'),
 	'no_table' => _('Demo table not found — run flow_dashboard.sql on the database first.'),
 	'conn_lost' => _('Connection lost — retrying.')
@@ -849,10 +1117,35 @@ header('Content-Type: text/html; charset=UTF-8');
 		.fdash .kpi .sub { color: var(--text-dim); font-size: 12px; margin-top: 2px;
 			overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+		/* ---- live interface traffic (real Zabbix values) ---- */
+		.fdash .livesec { padding: 12px 18px 0; }
+		.fdash .livesec h3 .dot { display: inline-block; width: 8px; height: 8px;
+			border-radius: 50%; background: var(--ok); margin-right: 7px;
+			vertical-align: 1.5px; }
+		.fdash .livegrid { display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+			gap: 2px 20px; margin-top: 8px; }
+		.fdash .lrow { display: flex; align-items: center; gap: 12px; min-width: 0;
+			padding: 5px 0; }
+		.fdash .lrow .ln { min-width: 0; flex: 1; }
+		.fdash .lrow .ln .n { font-weight: 600; font-size: 13px; overflow: hidden;
+			text-overflow: ellipsis; white-space: nowrap; }
+		.fdash .lrow .ln .s { color: var(--text-dim); font-size: 11.5px; overflow: hidden;
+			text-overflow: ellipsis; white-space: nowrap; }
+		.fdash .lrow .lv { display: flex; gap: 10px; text-align: right;
+			font-variant-numeric: tabular-nums; font-size: 12.5px; white-space: nowrap; }
+		.fdash .lrow .lv .in { color: var(--ok); }
+		.fdash .lrow .lv .out { color: var(--accent); }
+		.fdash .lrow .age { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+		.fdash .lnone { color: var(--text-dim); padding: 6px 0; font-size: 13px; }
+
 		/* ---- charts row ---- */
 		.fdash .charts { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
 			gap: 12px; padding: 12px 18px 0; }
-		@media (max-width: 900px) { .fdash .charts { grid-template-columns: minmax(0, 1fr); } }
+		@media (max-width: 900px) {
+			.fdash .charts { grid-template-columns: minmax(0, 1fr); }
+			.fdash .donutwrap svg { width: clamp(140px, 40%, 190px); }
+		}
 		.fdash .card { background: var(--surface); border: 1px solid var(--line-soft);
 			border-radius: 10px; padding: 12px 14px; position: relative; }
 		.fdash .card h3 { margin: 0; font-size: 14px; font-weight: 700; }
@@ -877,7 +1170,7 @@ header('Content-Type: text/html; charset=UTF-8');
 
 		/* donut card layout: chart left, HTML legend right */
 		.fdash .donutwrap { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
-		.fdash .donutwrap svg { width: 190px; height: 190px; flex: 0 0 auto; }
+		.fdash .donutwrap svg { width: 190px; height: auto; flex: 0 0 auto; }
 		.fdash .dlegend { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
 		.fdash .dlegend .dl { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto;
 			gap: 7px; align-items: center; font-size: 12.5px; }
@@ -893,7 +1186,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		.fdash .tcard h3 { margin: 0; font-size: 14px; font-weight: 700; }
 		.fdash .tcard .csub { color: var(--text-dim); font-size: 12px; margin-top: 1px; }
 		.fdash .thead, .fdash .trow { display: grid;
-			grid-template-columns: 24px minmax(0, 1fr) 78px 78px 46px;
+			grid-template-columns: 24px minmax(0, 1fr) 72px 72px 44px;
 			gap: 10px; align-items: center; }
 		.fdash .thead { color: var(--text-dim); font-size: 11.5px; padding: 9px 2px 5px;
 			border-bottom: 1px solid var(--line-soft); }
@@ -911,6 +1204,8 @@ header('Content-Type: text/html; charset=UTF-8');
 			text-overflow: ellipsis; white-space: nowrap; }
 		.fdash .trow .nm .bar { height: 4px; border-radius: 2px; background: var(--s1);
 			margin-top: 4px; opacity: .85; }
+		.fdash .dotlive { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+			background: var(--ok); margin-right: 6px; vertical-align: 1px; }
 		.fdash .trow .v { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
 		.fdash .trow .v.dim { color: var(--text-dim); }
 		.fdash .trow .v.on { font-weight: 600; }
@@ -921,8 +1216,8 @@ header('Content-Type: text/html; charset=UTF-8');
 		.fdash .empty { margin: 60px 18px; text-align: center; color: var(--text-dim); }
 
 		/* refetch keeps the frame: hold the previous render, dimmed */
-		.fdash .dim .kpis, .fdash .dim .charts, .fdash .dim .tables { opacity: .55;
-			transition: opacity .15s; }
+		.fdash .dim .kpis, .fdash .dim .livesec, .fdash .dim .charts, .fdash .dim .tables
+			{ opacity: .55; transition: opacity .15s; }
 
 		/* ---- toast ---- */
 		#toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
@@ -947,12 +1242,22 @@ header('Content-Type: text/html; charset=UTF-8');
 			.fdash .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 12px 0; }
 			.fdash .kpi .val { font-size: 19px; }
 			.fdash .charts { padding: 10px 12px 0; }
+			.fdash .livesec { padding: 10px 12px 0; }
 			.fdash .tables { padding: 10px 12px 12px; }
 			.fdash .donutwrap { flex-direction: column; align-items: stretch; }
-			.fdash .donutwrap svg { width: 160px; height: 160px; margin: 0 auto; }
-			.fdash .thead, .fdash .trow { grid-template-columns: 18px minmax(0, 1fr) 62px 62px 40px;
+			.fdash .donutwrap svg { width: min(160px, 60%); height: auto; margin: 0 auto; }
+			.fdash .thead, .fdash .trow { grid-template-columns: 18px minmax(0, 1fr) 58px 58px 36px;
 				gap: 7px; }
 			.fdash .empty { margin: 60px 12px; }
+		}
+
+		/* very narrow phones: drop the Flows column and the live age so the
+		   numbers keep their width and the names stay readable */
+		@media (max-width: 420px) {
+			.fdash .thead, .fdash .trow { grid-template-columns: 16px minmax(0, 1fr) 56px 56px;
+				gap: 6px; }
+			.fdash .thead .cflow, .fdash .trow .fl { display: none; }
+			.fdash .lrow .age { display: none; }
 		}
 	</style>
 </head>
@@ -964,7 +1269,7 @@ header('Content-Type: text/html; charset=UTF-8');
 			stroke-linecap="round" stroke-linejoin="round"/></svg>
 		<div>
 			<h1><?= _('Traffic analytics') ?></h1>
-			<div class="sub"><?= _('Demo traffic over the monitored Zabbix hosts — Top-10 rankings, trends and shares.') ?></div>
+			<div class="sub"><?= _('Demo traffic over the monitored Zabbix hosts — anchored to real interface metrics where available.') ?></div>
 		</div>
 		<div class="spacer"></div>
 		<span class="stamp" id="stamp"></span>
@@ -991,6 +1296,14 @@ header('Content-Type: text/html; charset=UTF-8');
 	</div>
 
 	<div class="kpis" id="kpis"></div>
+
+	<div class="livesec">
+		<div class="card">
+			<h3><span class="dot"></span><?= _('Live interface traffic') ?></h3>
+			<div class="csub"><?= _('in / out, straight from Zabbix history') ?></div>
+			<div class="livegrid" id="livebox"></div>
+		</div>
+	</div>
 
 	<div class="charts">
 		<div class="card">
@@ -1192,14 +1505,106 @@ function peakBps(d) {
 	return peak;
 }
 
+// ---- live interface traffic (real Zabbix values) ------------------------------
+
+// names of the endpoints that are real Zabbix hosts — reused to flag them in
+// the top-10 tables; refreshed on every buildAll from the latest payload
+let LIVE_SET = new Set();
+
+function fmtAge(clock) {
+	const s = Math.max(0, Math.floor(Date.now() / 1000) - clock);
+
+	if (s < 90) return T.age_now;
+
+	let v, u;
+
+	if (s < 3600) {
+		v = Math.round(s / 60); u = 'min';
+	}
+	else if (s < 86400) {
+		v = Math.round(s / 3600); u = 'h';
+	}
+	else {
+		v = Math.round(s / 86400); u = 'd';
+	}
+
+	return T.age_ago.replace('%1$s', v + ' ' + u);
+}
+
+function renderLive(d) {
+	const box = document.getElementById('livebox');
+	box.textContent = '';
+
+	const rows = d.live || [];
+	LIVE_SET = new Set(rows.map(h => h.name));
+
+	if (!rows.length) {
+		const none = document.createElement('div');
+		none.className = 'lnone';
+		none.textContent = T.live_none;
+		box.append(none);
+
+		return;
+	}
+
+	for (const h of rows) {
+		const row = document.createElement('div');
+		row.className = 'lrow';
+
+		const ln = document.createElement('div');
+		ln.className = 'ln';
+
+		const n = document.createElement('div');
+		n.className = 'n';
+		n.textContent = h.name;
+
+		const s = document.createElement('div');
+		s.className = 's';
+		s.textContent = [h.ip, h.group].filter(Boolean).join(' · ');
+
+		ln.append(n, s);
+
+		const lv = document.createElement('div');
+		lv.className = 'lv';
+
+		const vi = document.createElement('span');
+		vi.className = 'in';
+		vi.textContent = '↓ ' + fmtBps(h.in_bps);
+
+		const vo = document.createElement('span');
+		vo.className = 'out';
+		vo.textContent = '↑ ' + fmtBps(h.out_bps);
+
+		lv.append(vi, vo);
+
+		const age = document.createElement('span');
+		age.className = 'age';
+		age.textContent = fmtAge(h.clock);
+
+		row.append(ln, lv, age);
+		box.append(row);
+	}
+}
+
 // ---- stacked area chart ------------------------------------------------------
 
-// chart geometry per available width: narrow containers get a taller, tighter
-// plot with fewer, bigger-labelled ticks instead of a proportionally shrunk one
+// chart geometry follows the container width continuously: the viewBox width
+// equals the measured card width (so the rendered height stays ~H instead of
+// stretching on ultra-wide screens), while margins ease between a compact
+// narrow plot and the roomy desktop one; tick counts step at a readability
+// threshold instead of a hard layout jump
 function areaGeom(wpx) {
-	return wpx < 640
-		? {W: 560, H: 340, M: {l: 48, r: 10, t: 12, b: 26}, ticks: 3, ydiv: 3, font: 10}
-		: {W: 900, H: 300, M: {l: 58, r: 14, t: 12, b: 28}, ticks: 5, ydiv: 4, font: 11};
+	const W = Math.max(300, Math.round(wpx));
+	const k = Math.min(1, Math.max(0, (W - 440) / (900 - 440)));	// 0 narrow → 1 wide
+
+	return {
+		W,
+		H: Math.round(340 - 40 * k),
+		M: {l: Math.round(46 + 12 * k), r: Math.round(8 + 6 * k), t: 12, b: Math.round(24 + 4 * k)},
+		ticks: k < 0.45 ? 3 : 5,
+		ydiv: k < 0.45 ? 3 : 4,
+		font: k < 0.45 ? 10 : 11
+	};
 }
 
 function renderArea(d) {
@@ -1602,7 +2007,16 @@ function renderTables(d) {
 
 			const n = document.createElement('div');
 			n.className = 'n';
-			n.textContent = (key === 'country') ? countryLabel(r.name) : r.name;
+
+			// real Zabbix hosts get a green dot (same set as the live panel)
+			if ((key === 'src' || key === 'dst') && LIVE_SET.has(r.name)) {
+				const dot = document.createElement('span');
+				dot.className = 'dotlive';
+				dot.title = T.live_title;
+				n.append(dot);
+			}
+
+			n.append(document.createTextNode((key === 'country') ? countryLabel(r.name) : r.name));
 
 			const s = document.createElement('div');
 			s.className = 's';
@@ -1644,6 +2058,7 @@ function buildAll(d) {
 	lastData = d;
 	document.getElementById('root').classList.remove('dim');
 	renderKpis(d);
+	renderLive(d);
 	renderArea(d);
 	renderDonut(d);
 	renderTables(d);
