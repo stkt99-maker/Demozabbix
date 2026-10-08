@@ -260,7 +260,7 @@ function monRecovered(int $from): array {
 function monLive(): array {
 	$meta = [];
 	$res = DBselect(
-		'SELECT i.itemid, h.name AS host, i.key_ AS key_, MIN(g.name) AS grp, MIN(ii.ip) AS ip'.
+		'SELECT i.itemid, h.hostid, h.name AS host, i.key_ AS key_, MIN(g.name) AS grp, MIN(ii.ip) AS ip'.
 		' FROM items i'.
 		' JOIN hosts h ON h.hostid=i.hostid AND h.status='.HOST_STATUS_MONITORED.
 		' LEFT JOIN hosts_groups hg ON hg.hostid=h.hostid'.
@@ -271,7 +271,7 @@ function monLive(): array {
 		' AND i.key_ NOT LIKE \'%dropped%\' AND i.key_ NOT LIKE \'%errors%\''.
 		' AND i.key_ NOT LIKE \'%{#%\''.
 		' AND i.key_ NOT LIKE \'%"lo"%\''.
-		' GROUP BY i.itemid, h.name, i.key_'
+		' GROUP BY i.itemid, h.hostid, h.name, i.key_'
 	);
 
 	while ($row = DBfetch($res)) {
@@ -295,7 +295,8 @@ function monLive(): array {
 		$dir = str_starts_with($m['key_'], 'net.if.in[') ? 'in' : 'out';
 
 		if (!isset($out[$m['host']])) {
-			$out[$m['host']] = ['name' => $m['host'], 'group' => $m['grp'], 'ip' => $m['ip'],
+			$out[$m['host']] = ['hostid' => (int) $m['hostid'], 'name' => $m['host'],
+				'group' => $m['grp'], 'ip' => $m['ip'],
 				'in' => 0, 'out' => 0, 'clock' => 0];
 		}
 
@@ -311,7 +312,7 @@ function monLive(): array {
 		$ip = $h['ip'] === '0' ? '' : $h['ip'];
 		$grp = $h['group'] === '0' ? '' : $h['group'];
 
-		$rows[] = ['name' => $h['name'], 'group' => $grp, 'ip' => $ip,
+		$rows[] = ['hostid' => $h['hostid'], 'name' => $h['name'], 'group' => $grp, 'ip' => $ip,
 			'in_bps' => $h['in'], 'out_bps' => $h['out'], 'clock' => $h['clock']];
 	}
 
@@ -354,10 +355,11 @@ function monData(string $window): array {
 
 		$problem_rows[] = ['id' => (int) $p['eventid'], 'name' => $p['name'], 'sev' => $sev,
 			'clock' => (int) $p['clock'], 'ack' => (int) $p['acknowledged'],
-			'host' => $p['host'], 'group' => $grp];
+			'host' => $p['host'], 'hostid' => $hostid, 'group' => $grp];
 
 		if (!isset($by_host[$hostid])) {
-			$by_host[$hostid] = ['name' => $p['host'], 'group' => $grp, 'cnt' => 0, 'sev' => -1];
+			$by_host[$hostid] = ['hostid' => $hostid, 'name' => $p['host'], 'group' => $grp,
+				'cnt' => 0, 'sev' => -1];
 		}
 
 		$by_host[$hostid]['cnt']++;
@@ -404,7 +406,8 @@ function monData(string $window): array {
 		}
 
 		$cnt = $group_problems[$gid] ?? 0;
-		$group_rows[] = ['name' => $g['name'], 'hosts' => $g['hosts'], 'cnt' => $cnt];
+		$group_rows[] = ['gid' => $gid, 'name' => $g['name'], 'hosts' => $g['hosts'],
+			'cnt' => $cnt];
 	}
 
 	usort($group_rows, static fn($a, $b) =>
@@ -414,8 +417,9 @@ function monData(string $window): array {
 	$recovered = [];
 
 	foreach (array_slice(monRecovered($now - 86400), 0, MON_TOP_TABLES) as $r) {
-		$recovered[] = ['name' => $r['name'], 'host' => $r['host'], 'sev' => (int) $r['severity'],
-			'clock' => (int) $r['clock'], 'r_clock' => (int) $r['r_clock'],
+		$recovered[] = ['id' => (int) $r['eventid'], 'name' => $r['name'], 'host' => $r['host'],
+			'sev' => (int) $r['severity'], 'clock' => (int) $r['clock'],
+			'r_clock' => (int) $r['r_clock'],
 			'dur' => max(0, (int) $r['r_clock'] - (int) $r['clock'])];
 	}
 
@@ -557,7 +561,13 @@ $i18n = [
 	'age_now' => _('just now'),
 	'age_ago' => _('%1$s ago'),
 	'no_data' => _('No data for this range.'),
-	'conn_lost' => _('Connection lost — retrying.')
+	'conn_lost' => _('Connection lost — retrying.'),
+	'a_event' => _('View event details'),
+	'a_latest' => _('Latest data for this host'),
+	'a_group' => _('Open problems in this group'),
+	'a_hosts' => _('Monitoring → Hosts'),
+	'a_problems' => _('Monitoring → Problems'),
+	'a_latestdata' => _('Monitoring → Latest data')
 ];
 
 session_write_close();
@@ -677,6 +687,16 @@ header('Content-Type: text/html; charset=UTF-8');
 		.mdash .prow .age { text-align: right; color: var(--text-dim); font-size: 12px;
 			font-variant-numeric: tabular-nums; white-space: nowrap; }
 		.mdash .pnone { color: var(--text-dim); padding: 10px 2px; font-size: 13px; }
+
+		/* clickable rows and text links */
+		.mdash .prow.is-link, .mdash .lrow.is-link, .mdash .trow.is-link { cursor: pointer; }
+		.mdash .prow.is-link:hover, .mdash .lrow.is-link:hover, .mdash .trow.is-link:hover
+			{ background: var(--surface-2); }
+		.mdash a.hlnk { color: inherit; text-decoration: none; }
+		.mdash .prow .pn { color: inherit; text-decoration: none; }
+		.mdash a.hlnk:hover, .mdash .prow .pn:hover { color: var(--accent); text-decoration: underline; }
+		.mdash a.kpi { display: block; text-decoration: none; color: inherit; }
+		.mdash .kpi.is-link:hover { border-color: var(--line); background: var(--surface-2); }
 
 		/* ---- charts row ---- */
 		.mdash .charts { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
@@ -952,6 +972,44 @@ let state = {window: DATA.window};
 let lastData = null;
 let inflight = false;
 
+// ---- navigation targets for the clickable rows and tiles ----------------------
+
+const urlEvent = id => 'tr_events.php?eventid=' + encodeURIComponent(id);
+const urlLatest = id => 'zabbix.php?' + new URLSearchParams(
+	{action: 'latest.view', 'hostids[]': id, filter_set: '1'});
+const urlProblemsHost = id => 'zabbix.php?' + new URLSearchParams(
+	{action: 'problem.view', 'hostids[]': id, filter_set: '1'});
+const urlProblemsGroup = id => 'zabbix.php?' + new URLSearchParams(
+	{action: 'problem.view', 'groupids[]': id, filter_set: '1'});
+const urlHosts = 'zabbix.php?action=host.view';
+const urlProblems = 'zabbix.php?action=problem.view';
+const urlLatestView = 'zabbix.php?action=latest.view';
+
+// make a whole row open url in a new tab; clicks on real anchors inside the
+// row are left to the anchor itself
+function rowLink(row, url) {
+	row.classList.add('is-link');
+
+	row.addEventListener('click', e => {
+		if (e.button !== 0 || e.target.closest('a')) return;
+
+		window.open(url, '_blank', 'noopener');
+	});
+}
+
+// a plain link that looks like the surrounding text
+function textLink(href, title, text) {
+	const a = document.createElement('a');
+	a.className = 'hlnk';
+	a.href = href;
+	a.target = '_blank';
+	a.rel = 'noopener';
+	a.title = title;
+	a.textContent = text;
+
+	return a;
+}
+
 const escHtml = s => String(s).replace(/[&<>"']/g,
 	c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -1057,22 +1115,38 @@ function renderKpis(d) {
 
 	const tiles = [
 		[T.k_hosts, fmtNum(k.hosts),
-			T.k_hosts_sub.replace('%1$s', fmtNum(k.disabled)).replace('%2$s', fmtNum(k.templates)), null],
+			T.k_hosts_sub.replace('%1$s', fmtNum(k.disabled)).replace('%2$s', fmtNum(k.templates)),
+			null, urlHosts, T.a_hosts],
 		[T.k_problems, fmtNum(k.problems),
-			T.k_unack.replace('%1$s', fmtNum(k.unack)), worstColor],
+			T.k_unack.replace('%1$s', fmtNum(k.unack)),
+			worstColor, urlProblems, T.a_problems],
 		[T.k_avail, k.avail_pct === null ? '—' : k.avail_pct + '%',
-			T.k_avail_sub.replace('%1$s', fmtNum(k.agent_unavail)).replace('%2$s', fmtNum(k.agent_unknown)), null],
+			T.k_avail_sub.replace('%1$s', fmtNum(k.agent_unavail)).replace('%2$s', fmtNum(k.agent_unknown)),
+			null, urlHosts, T.a_hosts],
 		[T.k_items, fmtNum(k.items),
-			T.k_items_sub.replace('%1$s', fmtNum(k.items_bad)), null],
+			T.k_items_sub.replace('%1$s', fmtNum(k.items_bad)),
+			null, urlLatestView, T.a_latestdata],
 		[T.k_triggers, fmtNum(k.triggers),
-			T.k_triggers_sub.replace('%1$s', fmtNum(k.triggers_problem)), null],
+			T.k_triggers_sub.replace('%1$s', fmtNum(k.triggers_problem)), null, null, ''],
 		[T.k_events, fmtNum(k.events24),
-			T.k_events_sub.replace('%1$s', fmtNum(k.recovered24)), null]
+			T.k_events_sub.replace('%1$s', fmtNum(k.recovered24)), null, null, '']
 	];
 
-	for (const [lbl, val, sub, dot] of tiles) {
-		const tile = document.createElement('div');
-		tile.className = 'kpi';
+	for (const [lbl, val, sub, dot, url, title] of tiles) {
+		let tile;
+
+		if (url) {
+			tile = document.createElement('a');
+			tile.className = 'kpi is-link';
+			tile.href = url;
+			tile.target = '_blank';
+			tile.rel = 'noopener';
+			tile.title = title;
+		}
+		else {
+			tile = document.createElement('div');
+			tile.className = 'kpi';
+		}
 
 		const l = document.createElement('div');
 		l.className = 'lbl';
@@ -1119,6 +1193,7 @@ function renderProblems(d) {
 	for (const p of rows) {
 		const row = document.createElement('div');
 		row.className = 'prow';
+		rowLink(row, urlEvent(p.id));
 
 		const edge = document.createElement('span');
 		edge.className = 'edge';
@@ -1143,7 +1218,7 @@ function renderProblems(d) {
 
 		const n = document.createElement('div');
 		n.className = 'n';
-		n.textContent = p.host;
+		n.append(textLink(urlLatest(p.hostid), T.a_latest, p.host));
 
 		const s = document.createElement('div');
 		s.className = 's';
@@ -1151,10 +1226,13 @@ function renderProblems(d) {
 
 		hn.append(n, s);
 
-		const pn = document.createElement('span');
+		const pn = document.createElement('a');
 		pn.className = 'pn';
+		pn.href = urlEvent(p.id);
+		pn.target = '_blank';
+		pn.rel = 'noopener';
+		pn.title = T.a_event;
 		pn.textContent = p.name;
-		pn.title = p.name;
 
 		row.append(sev, hn, pn);
 
@@ -1612,13 +1690,14 @@ function renderLive(d) {
 	for (const h of rows) {
 		const row = document.createElement('div');
 		row.className = 'lrow';
+		rowLink(row, urlLatest(h.hostid));
 
 		const ln = document.createElement('div');
 		ln.className = 'ln';
 
 		const n = document.createElement('div');
 		n.className = 'n';
-		n.textContent = h.name;
+		n.append(textLink(urlLatest(h.hostid), T.a_latest, h.name));
 
 		const s = document.createElement('div');
 		s.className = 's';
@@ -1671,9 +1750,21 @@ function renderTables(d) {
 
 		const max = key === 'recovered' ? 0 : Math.max(...rows.map(r => r.cnt), 1);
 
+		// rows navigate: hosts → latest data, groups → their problems,
+		// recoveries → the original event details
+		const navFor = r => key === 'hosts'
+			? urlLatest(r.hostid)
+			: key === 'groups' ? urlProblemsGroup(r.gid) : urlEvent(r.id);
+		const navTitle = key === 'hosts'
+			? T.a_latest
+			: key === 'groups' ? T.a_group : T.a_event;
+
 		rows.forEach((r, i) => {
 			const row = document.createElement('div');
 			row.className = 'trow';
+			rowLink(row, navFor(r));
+
+			const nav = navFor(r);
 
 			const rank = document.createElement('span');
 			rank.className = 'rank' + (i < 3 ? ' is-top' : '');
@@ -1684,7 +1775,7 @@ function renderTables(d) {
 
 			const n = document.createElement('div');
 			n.className = 'n';
-			n.textContent = key === 'recovered' ? r.name : r.name;
+			n.append(textLink(nav, navTitle, r.name));
 
 			const s = document.createElement('div');
 			s.className = 's';

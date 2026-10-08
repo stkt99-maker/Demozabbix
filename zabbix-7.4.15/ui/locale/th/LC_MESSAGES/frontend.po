@@ -22976,3 +22976,21 @@ msgstr "รุนแรงสุด"
 
 msgid "lasted %1$s"
 msgstr "ใช้เวลาไป %1$s"
+
+msgid "View event details"
+msgstr "เปิดรายละเอียดเหตุการณ์"
+
+msgid "Latest data for this host"
+msgstr "ข้อมูลล่าสุดของโฮสต์นี้"
+
+msgid "Open problems in this group"
+msgstr "เปิดปัญหาในกลุ่มนี้"
+
+msgid "Monitoring → Hosts"
+msgstr "การมอนิเตอริง → โฮสต์"
+
+msgid "Monitoring → Problems"
+msgstr "การมอนิเตอริง → ปัญหา"
+
+msgid "Monitoring → Latest data"
+msgstr "การมอนิเตอริง → ข้อมูลล่าสุด"
