@@ -582,6 +582,12 @@ header('Content-Type: text/html; charset=UTF-8');
 	<title>Monitoring summary — Zabbix</title>
 	<link rel="stylesheet" type="text/css" href="assets/styles/modern-theme.css">
 	<style>
+		/* the stock theme pins the SPA at 100vh with body overflow hidden
+		   (its own .wrapper scrolls) — this page is a normal scrolling
+		   document, so undo both before anything else */
+		html, body { height: auto; }
+		body { display: block; overflow: auto; }
+
 		:root {
 			color-scheme: dark;
 			--bg: #0a1120;
