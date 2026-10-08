@@ -22871,3 +22871,108 @@ msgstr "%1$s ที่แล้ว"
 
 msgid "Demo traffic over the monitored Zabbix hosts — anchored to real interface metrics where available."
 msgstr "ทราฟฟิกสาธิตบนโฮสต์ Zabbix ที่มอนิเตอร์อยู่ — ปริมาณอิงตัวชี้วัดอินเทอร์เฟซจริงเมื่อมีข้อมูล"
+
+msgid "Monitoring summary"
+msgstr "สรุปการตรวจสอบ"
+
+msgid "Monitoring summary (Demo)"
+msgstr "สรุปการตรวจสอบ (เดโม)"
+
+msgid "Live status of the monitored Zabbix environment — hosts, problems and availability."
+msgstr "สถานะแบบเรียลไทม์ของสภาพแวดล้อม Zabbix ที่มอนิเตอร์อยู่ — โฮสต์ ปัญหา และความพร้อมใช้งาน"
+
+msgid "Monitored hosts"
+msgstr "โฮสต์ที่มอนิเตอร์อยู่"
+
+msgid "%1$s disabled · %2$s templates"
+msgstr "ปิดใช้งาน %1$s · เทมเพลต %2$s"
+
+msgid "Active problems"
+msgstr "ปัญหาที่ยังไม่ปิด"
+
+msgid "%1$s unacknowledged"
+msgstr "ยังไม่รับทราบ %1$s"
+
+msgid "Agent availability"
+msgstr "ความพร้อมของ agent"
+
+msgid "%1$s down · %2$s unknown"
+msgstr "ล่ม %1$s · ไม่ทราบสถานะ %2$s"
+
+msgid "Items enabled"
+msgstr "ไอเท็มที่เปิดใช้งาน"
+
+msgid "%1$s not supported"
+msgstr "ไม่รองรับ %1$s"
+
+msgid "Triggers enabled"
+msgstr "ทริกเกอร์ที่เปิดใช้งาน"
+
+msgid "%1$s in problem state"
+msgstr "อยู่ในสถานะปัญหา %1$s"
+
+msgid "Problem events (24 h)"
+msgstr "เหตุการณ์ปัญหา (24 ชม.)"
+
+msgid "%1$s recovered"
+msgstr "กลับมาปกติแล้ว %1$s"
+
+msgid "Open problems, worst first"
+msgstr "ปัญหาที่ยังไม่ปิด เรียงจากรุนแรงสุดก่อน"
+
+msgid "No active problems."
+msgstr "ไม่มีปัญหาที่ยังไม่ปิด"
+
+msgid "ACK"
+msgstr "รับทราบ"
+
+msgid "Problem events over time"
+msgstr "เหตุการณ์ปัญหาตามช่วงเวลา"
+
+msgid "by severity"
+msgstr "ตามระดับความรุนแรง"
+
+msgid "agent interface status"
+msgstr "สถานะอินเทอร์เฟซของ agent"
+
+msgid "Reachable"
+msgstr "พร้อมใช้งาน"
+
+msgid "Unreachable"
+msgstr "ไม่พร้อมใช้งาน"
+
+msgid "Status unknown"
+msgstr "ไม่ทราบสถานะ"
+
+msgid "No agent interface"
+msgstr "ไม่มีอินเทอร์เฟซ agent"
+
+msgid "hosts"
+msgstr "โฮสต์"
+
+msgid "No problem events in this range."
+msgstr "ไม่มีเหตุการณ์ปัญหาในช่วงนี้"
+
+msgid "%1$s events"
+msgstr "เหตุการณ์ %1$s รายการ"
+
+msgid "Top hosts by problems"
+msgstr "โฮสต์ที่มีปัญหามากที่สุด"
+
+msgid "active problems per host"
+msgstr "ปัญหาที่ยังไม่ปิดต่อโฮสต์"
+
+msgid "monitored hosts and open problems"
+msgstr "โฮสต์ที่มอนิเตอร์อยู่และปัญหาที่ยังไม่ปิด"
+
+msgid "Recovered (24 h)"
+msgstr "กลับมาปกติ (24 ชม.)"
+
+msgid "problems resolved in the last 24 hours"
+msgstr "ปัญหาที่ปิดแล้วใน 24 ชั่วโมงที่ผ่านมา"
+
+msgid "Worst"
+msgstr "รุนแรงสุด"
+
+msgid "lasted %1$s"
+msgstr "ใช้เวลาไป %1$s"

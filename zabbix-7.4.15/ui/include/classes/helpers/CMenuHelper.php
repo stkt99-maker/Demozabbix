@@ -166,8 +166,8 @@ class CMenuHelper {
 					->setUrl(new CUrl('topo_tree.php'), 'topo_tree.php')
 				: null,
 			!CWebUser::isGuest()
-				? (new CMenuItem(_('Traffic analytics (Demo)')))
-					->setUrl(new CUrl('flow_dashboard.php'), 'flow_dashboard.php')
+				? (new CMenuItem(_('Monitoring summary (Demo)')))
+					->setUrl(new CUrl('mon_dashboard.php'), 'mon_dashboard.php')
 				: null
 		];
 		$submenu_topology = array_filter($submenu_topology);
