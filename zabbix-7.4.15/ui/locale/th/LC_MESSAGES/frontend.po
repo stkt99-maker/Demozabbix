@@ -335,7 +335,7 @@ msgstr "(กฎหมาย) เพื่อเรียกค่าเดี่
 
 #: include/views/configuration.host.discovery.edit.php:553
 msgid "(legacy) to retrieve a subtree in JSON"
-msgstr "เพื่อไปเอาเรือดําน้ําในเจสัน"
+msgstr ""
 
 #: app/partials/configuration.host.edit.html.php:133
 msgid "(linked by host discovery)"
@@ -359,7 +359,7 @@ msgstr "1 นาที"
 
 #: app/views/host.wizard.edit.php:861
 msgid "1. Install Java Gateway on the same machine running Zabbix server by following the instructions in"
-msgstr "1. ติดตั้งจาวาเกตในเครื่องเดียวกันที่เรียกเซิร์ฟเวอร์ Zabix โดยทําตามคําแนะนําใน"
+msgstr "1. ติดตั้ง Java Gateway บนเครื่องเดียวกับที่รันเซิร์ฟเวอร์ Zabbix โดยทำตามคำแนะนำใน"
 
 #: app/views/administration.queue.overview.php:48 app/views/administration.queue.overview.proxy.php:48
 msgid "10 seconds"
@@ -951,7 +951,7 @@ msgstr "พอร์ตตัวแทน"
 
 #: include/classes/data/CItemData.php:919
 msgid "Agent variant check. Returns 1 - for Zabbix agent; 2 - for Zabbix agent 2"
-msgstr "เจ้าหน้าที่เช็ค ผลตอบแทน 1 - สําหรับ Sabix Agen; 2 - สําหรับ Zabix Aagent 2"
+msgstr ""
 
 #: app/views/host.wizard.edit.php:158 app/views/js/host.wizard.edit.js.php:1781
 msgid "Agent-based"
@@ -979,7 +979,7 @@ msgstr "รวบรวมข้อมูลทั้งหมด"
 
 #: widgets/piechart/includes/CWidgetFieldDataSetView.php:282 widgets/svggraph/includes/CWidgetFieldDataSetView.php:384 widgets/tophosts/views/column.edit.php:142
 msgid "Aggregation function"
-msgstr "ฟังก์ชัน EXIF"
+msgstr "ฟังก์ชันการรวมค่า"
 
 #: widgets/svggraph/includes/CWidgetFieldDataSetView.php:406 widgets/tophosts/views/column.edit.php:165
 msgid "Aggregation interval"
@@ -1355,7 +1355,7 @@ msgstr "ควรรองรับ MySQL หรือ PostgrSQL อย่าง
 
 #: include/classes/setup/CFrontendSetup.php:241
 msgid "At least one of MySQL, PostgreSQL or Oracle should be supported."
-msgstr "ควรรองรับ MySQL อย่างน้อย 1 ตัว PostgrestQL หรือ Oraphy"
+msgstr "ควรรองรับ MySQL, PostgreSQL หรือ Oracle อย่างน้อยหนึ่งตัว"
 
 #: app/views/correlation.edit.php:264
 msgid "At least one operation must be selected."
@@ -1747,7 +1747,7 @@ msgstr "นําไปด้านหน้า"
 
 #: app/views/administration.timeouts.edit.php:130 app/views/popup.proxy.edit.php:342 include/items.inc.php:99
 msgid "Browser"
-msgstr "เบราว์เซอร์Comment"
+msgstr "เบราว์เซอร์"
 
 #: include/locales.inc.php:35
 msgid "Bulgarian (bg_BG)"
@@ -1787,7 +1787,7 @@ msgstr "เวลา CPU ที่ใช้ไปในการรอการ�
 
 #: include/classes/data/CItemData.php:1939
 msgid "CPU usage as a percentage during the interval depends on power management or HT, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier"
-msgstr "การใช้ CPU เป็นเปอร์เซ็นต์ระหว่างช่วงนั้น ขึ้นอยู่กับการจัดการพลังงาน หรือ HT หรือ \"url\" - ที่อยู่ URL ของบริการ VMware, \"Uid\" - VMware hyperviserfority performigner"
+msgstr ""
 
 #: include/classes/data/CItemData.php:1925
 msgid "CPU usage as a percentage during the interval, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier"
@@ -1811,15 +1811,15 @@ msgstr "แบบ CRLF"
 
 #: tests/selenium/modules/module_number_7/Module.php:17
 msgid "CSRF test"
-msgstr "ทดสอบ CSSRF"
+msgstr "ทดสอบ CSRF"
 
 #: tests/selenium/modules/module_number_7/views/csrf.form.view.php:25
 msgid "CSRF token test"
-msgstr "ทดสอบลายเซ็น CSSRF"
+msgstr "ทดสอบโทเคน CSRF"
 
 #: tests/selenium/modules/module_number_7/actions/CsrfFormUpdate.php:35
 msgid "CSRF token validation succeeded."
-msgstr "การตรวจสอบความถูกต้องของ CSSRF สําเร็จแล้ว"
+msgstr "การตรวจสอบโทเคน CSRF สำเร็จ"
 
 #: include/items.inc.php:1554
 msgid "CSV to JSON"
@@ -4299,7 +4299,7 @@ msgstr "จุฬาแยกพิกัดศูนย์ และขยา�
 
 #: app/views/host.wizard.edit.php:427
 msgid "Comma to separate multiple Zabbix servers, proxies, or clusters"
-msgstr "จุลภาคเพื่อแยกเซิร์ฟเวอร์ Zabix หลาย ๆ ตัว, โปรแกรมเบื้องหลัง, หรือกลุ่ม"
+msgstr "เครื่องหมายจุลภาคคั่นเซิร์ฟเวอร์ พร็อกซี หรือคลัสเตอร์ Zabbix หลายตัว"
 
 #: app/views/administration.script.edit.php:199 app/views/reports.actionlog.list.csv.php:45 app/views/reports.actionlog.list.php:140 include/actions.inc.php:1864
 msgid "Command"
@@ -4315,11 +4315,11 @@ msgstr "การ สื่อ ความ"
 
 #: app/views/host.wizard.edit.php:375
 msgid "Communication between Zabbix agent and server/proxy is secured with a unique user-defined pre-shared key identity and a secret pre-shared key linked to it."
-msgstr "การสื่อสารระหว่าง Zabix Aagent และเซิร์ฟเวอร์/ proxy มีความปลอดภัยแบบเฉพาะผู้ใช้ที่กําหนดไว้ก่อนการใช้กุญแจที่ใช้ร่วมกัน และกุญแจที่ใช้ร่วมกันอย่างลับที่เชื่อมต่อเข้าไปด้วย"
+msgstr "การสื่อสารระหว่าง Zabbix agent กับเซิร์ฟเวอร์/พร็อกซีเข้ารหัสด้วย identity และ pre-shared key ที่ผู้ใช้กำหนดเองซึ่งเชื่อมโยงกัน"
 
 #: app/views/host.wizard.edit.php:414
 msgid "Communication between Zabbix agent and server/proxy is secured with the pre-shared key (PSK) encryption method."
-msgstr "การสื่อสารระหว่าง Sabix Aager และเซิร์ฟเวอร์/ prixy เข้ารหัสไว้โดยใช้วิธีการเข้ารหัสแบบ pre-share (PSK)"
+msgstr "การสื่อสารระหว่าง Zabbix agent กับเซิร์ฟเวอร์/พร็อกซีเข้ารหัสด้วยวิธี pre-shared key (PSK)"
 
 #: include/items.inc.php:946
 msgctxt "SNMP Community"
@@ -4581,7 +4581,7 @@ msgstr "ยืนยันการแจ้งเตือนของปัญ
 
 #: include/classes/setup/CSetupWizard.php:1059
 msgid "Congratulations! You have successfully installed Zabbix frontend."
-msgstr "ยินดีด้วย! คุณติดตั้ง Sabix ล่วงหน้าเรียบร้อยแล้ว"
+msgstr "ยินดีด้วย! คุณติดตั้ง Zabbix frontend สำเร็จแล้ว"
 
 #: include/hosts.inc.php:1227 include/views/inventory.host.view.php:81 include/views/js/monitoring.sysmaps.js.php:792
 msgid "Connect to"
@@ -4633,7 +4633,7 @@ msgstr ""
 
 #: include/classes/server/CZabbixServer.php:614
 msgid "Connection to Zabbix server failed. Incorrect configuration."
-msgstr "การเชื่อมต่อไปยังเซิร์ฟเวอร์ Zabix ล้มเหลว การปรับแต่งไม่ถูกต้อง"
+msgstr "การเชื่อมต่อไปยังเซิร์ฟเวอร์ Zabbix ล้มเหลว การตั้งค่าไม่ถูกต้อง"
 
 #: include/classes/setup/CSetupWizard.php:647
 msgid "Connection will not be encrypted because it uses a socket file (on Unix) or shared memory (Windows)."
@@ -5242,7 +5242,7 @@ msgstr "ชื่อ DNS"
 
 #: app/controllers/CControllerAuthenticationEdit.php:340 app/controllers/CControllerAuthenticationEdit.php:457 app/controllers/CControllerMfaCheck.php:88 app/views/mfa.edit.php:59
 msgid "DUO Universal Prompt"
-msgstr "Comment=ไคลเอนต์ DUOName"
+msgstr "DUO Universal Prompt"
 
 #: app/partials/scheduledreport.formgrid.html.php:98 app/partials/scheduledreport.table.html.php:50 app/views/maintenance.timeperiod.edit.php:80 app/views/popup.sla.edit.php:75 include/classes/helpers/CMaintenanceHelper.php:30 include/classes/helpers/CSlaHelper.php:39 report4.php:90
 msgid "Daily"
@@ -5337,15 +5337,15 @@ msgstr ""
 
 #: app/views/host.wizard.edit.php:168
 msgid "Data is collected by Zabbix agent, a lightweight software `component installed on your monitoring target."
-msgstr "ข้อมูลถูกเก็บมาโดย Sabix Agener software software อ่อน ๆ  `ติดตั้งบนเป้าหมายติดตามของคุณ"
+msgstr "รวบรวมข้อมูลโดย Zabbix agent ซึ่งเป็นซอฟต์แวร์ขนาดเล็กที่ติดตั้งบนเป้าหมายที่ตรวจสอบ"
 
 #: app/views/js/host.wizard.edit.js.php:89
 msgid "Data is collected by Zabbix agent, a lightweight software component installed on your monitoring target."
-msgstr "ข้อมูลถูกเก็บมาโดย Sabix Aagent, ส่วนประกอบซอฟแวร์เบาที่ติดตั้งบนเป้าหมายติดตามของคุณ"
+msgstr "รวบรวมข้อมูลโดย Zabbix agent ซึ่งเป็นซอฟต์แวร์ขนาดเล็กที่ติดตั้งบนเป้าหมายที่ตรวจสอบ"
 
 #: app/views/js/host.wizard.edit.js.php:90
 msgid "Data is collected by Zabbix server or proxy using standard protocols (e.g., SNMP, ICMP) or remote access methods (e.g., SSH)."
-msgstr "ข้อมูลจะถูกเก็บจากเซิร์ฟเวอร์ Zabix หรือพร็อกซี โดยใช้โพรโทคอลมาตรฐาน (เช่น SNMP, ICMP) หรือวิธีเข้าถึงระยะไกล (เช่น SHS)"
+msgstr "รวบรวมข้อมูลโดยเซิร์ฟเวอร์หรือพร็อกซี Zabbix ผ่านโปรโทคอลมาตรฐาน (เช่น SNMP, ICMP) หรือวิธีเข้าถึงระยะไกล (เช่น SSH)"
 
 #: app/views/js/webscenario.step.edit.js.php:297
 msgid "Data is not properly encoded."
@@ -5378,7 +5378,7 @@ msgstr "ชนิดของข้อมูล"
 
 #: include/classes/setup/CSetupWizard.php:660 include/classes/setup/CSetupWizard.php:840 include/classes/setup/CSetupWizard.php:1122
 msgid "Database TLS CA file"
-msgstr "แฟ้มฐานข้อมูล TLSC"
+msgstr "แฟ้ม CA TLS ของฐานข้อมูล"
 
 #: include/classes/setup/CFrontendSetup.php:669 include/classes/setup/CSetupWizard.php:670 include/classes/setup/CSetupWizard.php:848 include/classes/setup/CSetupWizard.php:1134
 msgid "Database TLS certificate file"
@@ -5434,7 +5434,7 @@ msgstr "พอร์ตฐานข้อมูล"
 
 #: include/classes/setup/CSetupWizard.php:547 include/classes/setup/CSetupWizard.php:783
 msgid "Database schema"
-msgstr "ฐานข้อมูลName"
+msgstr "สคีมาฐานข้อมูล"
 
 #: include/classes/setup/CSetupWizard.php:761
 msgid "Database server"
@@ -6117,7 +6117,7 @@ msgstr "รายละเอียด"
 
 #: httpdetails.php:27 httpdetails.php:185
 msgid "Details of web scenario"
-msgstr "รายละเอียดโครงการเว็บName"
+msgstr "รายละเอียดของเว็บซีนาริโอ"
 
 #: app/views/administration.housekeeping.edit.php:206
 msgid "Detected TimescaleDB license does not support compression. Compression is supported in TimescaleDB Community Edition."
@@ -6700,7 +6700,7 @@ msgstr "ตัวเลือกการเลื่อนลง"
 
 #: app/controllers/CControllerAuthenticationEdit.php:362 app/controllers/CControllerAuthenticationEdit.php:479 app/controllers/CControllerMfaCheck.php:88 app/views/mfa.edit.php:59
 msgid "Duo Universal Prompt"
-msgstr "Comment=รายการจดหมายName"
+msgstr "Duo Universal Prompt"
 
 #: include/classes/api/services/CUser.php:3493
 msgid "Duo state does not match saved state."
@@ -6874,7 +6874,7 @@ msgstr "เปิดใช้งานการตรวจสอบสิทธ
 
 #: app/views/host.wizard.edit.php:811
 msgid "Enable IPMI checks on Zabbix server"
-msgstr "เปิดใช้งานการตรวจสอบ IPPI บนเซิร์ฟเวอร์ Zabix"
+msgstr "เปิดใช้งานการตรวจสอบ IPMI บนเซิร์ฟเวอร์ Zabbix"
 
 #: app/views/administration.authentication.edit.php:209 app/views/administration.authentication.edit.php:281
 msgid "Enable JIT provisioning"
@@ -6886,7 +6886,7 @@ msgstr "เปิดใช้งานการตรวจสอบสิทธ
 
 #: app/views/administration.authentication.edit.php:272
 msgid "Enable SAML authentication"
-msgstr "เปิดใช้การยืนยัน SOCL"
+msgstr "เปิดใช้งานการตรวจสอบสิทธิ์ SAML"
 
 #: app/views/administration.authentication.edit.php:546
 msgid "Enable SCIM provisioning"
@@ -7124,7 +7124,7 @@ msgstr "ป้อนข้อความแสดงตัวที่ยัง
 
 #: app/views/host.wizard.edit.php:470
 msgid "Enter a unique name that Zabbix components will use to recognize the pre-shared key."
-msgstr "ป้อนชื่อเฉพาะที่ส่วนประกอบ Zabix จะใช้เพื่อยอมรับกุญแจที่ใช้ร่วมกัน"
+msgstr "ป้อนชื่อที่ไม่ซ้ำซึ่งคอมโพเนนต์ของ Zabbix จะใช้จดจำ pre-shared key"
 
 #: include/html.inc.php:201
 msgid "Enter full screen mode"
@@ -7132,11 +7132,11 @@ msgstr "เข้าสู่โหมดเต็มหน้าจอ"
 
 #: app/views/host.wizard.edit.php:609
 msgid "Enter the IP/DNS address and port of the Zabbix agent installed on your monitoring target."
-msgstr "ป้อนที่อยู่ IP/ DNS และพอร์ตของตัวแทน Zabix ที่ติดตั้งบนเป้าหมายติดตามของคุณ"
+msgstr "ป้อนที่อยู่ IP/DNS และพอร์ตของ Zabbix agent ที่ติดตั้งบนเป้าหมายที่ตรวจสอบ"
 
 #: app/views/host.wizard.edit.php:771
 msgid "Enter the IP/DNS address and port of your IPMI-enabled monitoring target."
-msgstr "ป้อนที่อยู่ IP/ DNS และพอร์ตของ IPPI ของคุณ ซึ่งสามารถติดตามได้"
+msgstr "ป้อนที่อยู่ IP/DNS และพอร์ตของเป้าหมายที่ตรวจสอบซึ่งเปิดใช้ IPMI"
 
 #: app/views/host.wizard.edit.php:847
 msgid "Enter the IP/DNS address and port of your JMX-enabled monitoring target."
@@ -7192,7 +7192,7 @@ msgstr "ข้อความผิดพลาด"
 
 #: app/partials/administration.system.info.php:141 app/partials/administration.system.info.php:148 app/partials/administration.system.info.php:160 app/partials/administration.system.info.php:173
 msgid "Error! Unable to start Zabbix server."
-msgstr "ผิดพลาด! ไม่สามารถเริ่มเซิร์ฟเวอร์ Zabix ได้"
+msgstr "ผิดพลาด! ไม่สามารถเริ่มเซิร์ฟเวอร์ Zabbix ได้"
 
 #: include/classes/screens/CScreenHttpTestDetails.php:111 include/classes/screens/CScreenHttpTestDetails.php:182
 #, c-format
@@ -7330,7 +7330,7 @@ msgstr "ตัวอย่าง:"
 
 #: app/views/administration.miscconfig.edit.php:38
 msgid "Example: https://localhost/zabbix/ui/"
-msgstr "ตัวอย่าง: https/zabix/i/"
+msgstr "ตัวอย่าง: https://localhost/zabbix/ui/"
 
 #: app/partials/massupdate.macros.tab.php:104 app/partials/massupdate.valuemaps.tab.php:76
 msgid "Except selected"
@@ -7554,7 +7554,7 @@ msgstr "ล้มเหลวในการอัปเดตหน้าปั
 
 #: jsLoader.php:141
 msgid "Failed to update dashboard page properties."
-msgstr "ล้มเหลวในการปรับปรุงคุณสมบัติของหน้า HTML"
+msgstr "อัปเดตคุณสมบัติของหน้าแดชบอร์ดไม่สำเร็จ"
 
 #: jsLoader.php:142
 msgid "Failed to update dashboard properties."
@@ -7582,7 +7582,7 @@ msgstr "ล้มเหลวในการ Audit"
 
 #: app/views/system.warning.php:27 app/views/system.warning.php:52
 msgid "Fatal error, please report to the Zabbix team"
-msgstr "มีข้อผิดพลาดร้ายแรง โปรดรายงานทีม Zabix"
+msgstr "เกิดข้อผิดพลาดร้ายแรง โปรดรายงานทีม Zabbix"
 
 #: widgets/favgraphs/Widget.php:29
 msgid "Favorite graphs"
@@ -7927,11 +7927,11 @@ msgstr ""
 
 #: app/controllers/CControllerScriptCreate.php:68 app/controllers/CControllerScriptUpdate.php:74 app/views/administration.script.edit.php:122 app/views/popup.operation.edit.php:63 include/classes/api/services/CScript.php:950
 msgid "Global script execution on Zabbix server is disabled by server configuration."
-msgstr "การประมวลผลสคริปต์ทั่วไปบนเซิร์ฟเวอร์ Zabix ถูกปิดการใช้งานโดยการปรับแต่งเซิร์ฟเวอร์"
+msgstr "การรันสคริปต์ส่วนกลางบนเซิร์ฟเวอร์ Zabbix ถูกปิดใช้งานโดยการตั้งค่าเซิร์ฟเวอร์"
 
 #: app/partials/administration.system.info.php:138
 msgid "Global scripts on Zabbix server"
-msgstr "สคริปต์ทั่วไปบนเซิร์ฟเวอร์ Zabix"
+msgstr "สคริปต์ส่วนกลางบนเซิร์ฟเวอร์ Zabbix"
 
 #: app/views/popup.proxy.edit.php:199
 msgid "Global timeouts"
@@ -7994,7 +7994,7 @@ msgstr ""
 
 #: include/httptest.inc.php:407
 msgid "Google Chrome"
-msgstr "กูเกิ้ล Krome"
+msgstr "Google Chrome"
 
 #: include/graphs.inc.php:65
 msgid "Gradient line"
@@ -8274,7 +8274,7 @@ msgstr "สถาปัตยกรรม HW"
 
 #: include/hosts.inc.php:164
 msgid "Hardware"
-msgstr "ฮาร์ดแวร์Name"
+msgstr "ฮาร์ดแวร์"
 
 #: include/hosts.inc.php:169
 msgid "Hardware (Full details)"
@@ -8398,7 +8398,7 @@ msgstr "การเคลียร์ประวัติศาสตร์ �
 
 #: widgets/tophosts/views/column.edit.php:193
 msgid "History data"
-msgstr "ข้อมูลประวัติการใช้Name"
+msgstr "ข้อมูลประวัติ"
 
 #: widgets/piechart/includes/WidgetForm.php:113 widgets/svggraph/includes/WidgetForm.php:244
 msgid "History data selection"
@@ -8886,7 +8886,7 @@ msgstr "IPMI เช็ค"
 
 #: include/views/inventory.host.view.php:67
 msgid "IPMI interfaces"
-msgstr "ส่วนติดต่อแบบ IPPI"
+msgstr "อินเทอร์เฟซ IPMI"
 
 #: app/views/host.wizard.edit.php:765
 msgid "IPMI port"
@@ -8898,7 +8898,7 @@ msgstr "เซ็นเซอร์ PMI"
 
 #: include/classes/data/CItemData.php:990
 msgid "IPMI sensor IDs and other sensor-related parameters. Returns JSON."
-msgstr "เซ็นเซอร์ PMI และตัวแปรอื่น ๆ ที่เกี่ยวข้องกับเซ็นเซอร์ กลับไปหาเจสัน"
+msgstr ""
 
 #: app/views/administration.iconmap.edit.php:62 app/views/administration.image.edit.php:77 app/views/administration.image.list.php:46
 msgid "Icon"
@@ -8988,7 +8988,7 @@ msgstr "การระบุระบบ ข้อความคืนค่�
 
 #: app/views/administration.authentication.edit.php:153
 msgid "If HTTP authentication is enabled, all users (even with frontend access set to LDAP/Internal) will be authenticated by the web server, not by Zabbix."
-msgstr "หากเปิดใช้งานการตรวจสอบสิทธิ์กับ HTTP ผู้ใช้ทั้งหมด (แม้จะมีการตั้งค่าสิทธิ์ย่อยของ LDAP/ Internal) จะถูกยืนยันโดยเซิร์ฟเวอร์เว็บ ไม่ใช่โดย Zabix"
+msgstr "หากเปิดใช้การตรวจสอบสิทธิ์ HTTP ผู้ใช้ทุกคน (แม้ตั้งสิทธิ์เข้าใช้ frontend เป็น LDAP/Internal) จะยืนยันโดยเว็บเซิร์ฟเวอร์ ไม่ใช่โดย Zabbix"
 
 #: include/classes/helpers/CServiceHelper.php:83
 #, c-format
@@ -9143,7 +9143,7 @@ msgstr "ในระยะ"
 
 #: app/views/host.wizard.edit.php:813
 msgid "In the Zabbix server configuration file (zabbix_server.conf), set the StartIPMIPollers parameter to a non-zero value."
-msgstr "ในแฟ้มค่าปรับแต่งของเซิร์ฟเวอร์ Zabix (zabix server. conf) กําหนดพารามิเตอร์เริ่มต้น PMPIPollers ให้เป็นค่าที่ไม่ใช่ศูนย์"
+msgstr "ในแฟ้มการตั้งค่าเซิร์ฟเวอร์ Zabbix (zabbix_server.conf) ให้ตั้งค่าพารามิเตอร์ StartIPMIPollers เป็นค่าที่ไม่ใช่ศูนย์"
 
 #: include/classes/widgets/fields/CWidgetFieldMultiSelectSla.php:31
 msgid "Inaccessible SLA"
@@ -9786,15 +9786,15 @@ msgstr "ติดตั้ง"
 
 #: app/views/host.wizard.edit.php:351 app/views/js/host.wizard.edit.js.php:1128
 msgid "Install Zabbix agent"
-msgstr "ติดตั้งตัวแทน Zabix"
+msgstr "ติดตั้ง Zabbix agent"
 
 #: app/views/host.wizard.edit.php:512 app/views/host.wizard.edit.php:535
 msgid "Install Zabbix agent 2 and its plugins on your monitoring target by following the installation instructions below."
-msgstr "ติดตั้ง Sabix เอเจ้นท์ 2 และโปรแกรมเสริมบนเป้าหมายติดตามของคุณ โดยการปฏิบัติตามคําแนะนําการติดตั้งด้านล่างนี้"
+msgstr "ติดตั้ง Zabbix agent 2 และปลั๊กอินบนเป้าหมายที่ตรวจสอบโดยทำตามคำแนะนำการติดตั้งด้านล่าง"
 
 #: app/views/host.wizard.edit.php:551 app/views/host.wizard.edit.php:574
 msgid "Install Zabbix agent and its plugins on your monitoring target by following the installation instructions below."
-msgstr "ติดตั้ง Sabix Aager และส่วนเสริมของมันบนเป้าหมายติดตามของคุณ โดยการปฏิบัติตามคําแนะนําการติดตั้งด้านล่างนี้"
+msgstr "ติดตั้ง Zabbix agent และปลั๊กอินบนเป้าหมายที่ตรวจสอบโดยทำตามคำแนะนำการติดตั้งด้านล่าง"
 
 #: setup.php:163
 msgid "Installation"
@@ -9814,7 +9814,7 @@ msgstr "การเชื่อมต่อระบบ"
 
 #: app/views/js/host.wizard.edit.js.php:98
 msgid "Intelligent Platform Management Interface (IPMI)"
-msgstr "ส่วนติดต่อจัดการระบบแบบฉลาด (IPPI)"
+msgstr "อินเทอร์เฟซการจัดการแพลตฟอร์มอัจฉริยะ (IPMI)"
 
 #: app/partials/monitoring.host.view.html.php:36 app/views/configuration.host.list.php:208 app/views/popup.proxy.edit.php:68 disc_prototypes.php:40 host_discovery.php:47 include/classes/html/CHostAvailability.php:76 items.php:38
 msgid "Interface"
@@ -9885,7 +9885,7 @@ msgstr "การกู้คืนปัญหาภายใน"
 
 #: include/httptest.inc.php:396
 msgid "Internet Explorer"
-msgstr "โปรแกรมสํารวจอินเทอร์เน็ตName"
+msgstr "Internet Explorer"
 
 #: app/partials/monitoring.latest.view.html.php:72 app/views/configuration.discovery.list.php:85 app/views/popup.lldoperation.php:105 app/views/popup.massupdate.item.php:224 include/forms.inc.php:586 include/views/configuration.host.discovery.edit.php:661 include/views/configuration.host.discovery.list.php:206 include/views/configuration.httpconf.list.php:144
 #: include/views/configuration.item.edit.php:780 include/views/configuration.item.list.php:94 include/views/configuration.item.prototype.edit.php:747 include/views/configuration.item.prototype.list.php:69
@@ -9916,7 +9916,7 @@ msgstr "ที่อยู่ IP ไม่ถูกต้อง"
 
 #: include/classes/core/CJsonRpc.php:201
 msgid "Invalid JSON. An error occurred on the server while parsing the JSON text."
-msgstr "เจสันใช้ไม่ได้ เกิดข้อผิดพลาดขึ้นบนเซิร์ฟเวอร์ ขณะทําการวิเคราะห์ข้อความ Json"
+msgstr "JSON ไม่ถูกต้อง เกิดข้อผิดพลาดบนเซิร์ฟเวอร์ขณะแยกข้อความ JSON"
 
 #: app/controllers/CControllerAuthenticationUpdate.php:165
 msgid "Invalid LDAP JIT provisioning media type mapping configuration."
@@ -9948,11 +9948,11 @@ msgstr "รูปแบบการติดตั้งไม่ถูกต้
 
 #: app/controllers/CControllerAuthenticationUpdate.php:208
 msgid "Invalid SAML JIT provisioning media type mapping configuration."
-msgstr "การปรับแต่งการจับคู่สื่อของ SOCL JIT ไม่ถูกต้อง"
+msgstr "การตั้งค่าการจับคู่ชนิดสื่อของการจัดสรร JIT แบบ SAML ไม่ถูกต้อง"
 
 #: app/controllers/CControllerAuthenticationUpdate.php:202
 msgid "Invalid SAML JIT provisioning user group mapping configuration."
-msgstr "การปรับแต่งการจับคู่กลุ่มผู้ใช้ SOCL JIT ไม่ถูกต้อง"
+msgstr "การตั้งค่าการจับคู่กลุ่มผู้ใช้ของการจัดสรร JIT แบบ SAML ไม่ถูกต้อง"
 
 #: jsLoader.php:438
 #, c-format
@@ -10375,7 +10375,7 @@ msgstr "เจ สัน"
 
 #: include/classes/mvc/CController.php:240
 msgid "JSON array input is expected."
-msgstr "การป้อนข้อมูล Json Archive"
+msgstr "ต้องเป็นอาร์เรย์ JSON"
 
 #: app/views/popup.massupdate.item.php:92 include/views/configuration.host.discovery.edit.php:285 include/views/configuration.item.edit.php:342 include/views/configuration.item.prototype.edit.php:327
 msgid "JSON data"
@@ -10779,19 +10779,19 @@ msgstr "รายชื่อโพรเซสของ OS กับคุณ�
 
 #: include/classes/data/CItemData.php:1305
 msgid "List of Windows Registry values or keys located at given key. Returns JSON."
-msgstr "รายชื่อของค่าหรือกุญแจของวินโดวส์ ที่อยู่ที่กุญแจที่กําหนด กลับไปหาเจสัน"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2743
 msgid "List of Zabbix proxies with name, mode, encryption, compression, version, last seen, host count, item count, required values per second (vps) and compatibility (current/outdated/unsupported). Returns JSON."
-msgstr "รายการของ ZabixProfile โดยใช้ชื่อ, โหมด, การเข้ารหัส, การบีบอัด, รุ่น, ที่เห็นล่าสุด, จํานวนเครื่อง, จํานวนรายการ, ค่าที่ต้องการต่อวินาที (vps) และความเข้ากันได้ (ปัจจุบัน/ การรองรับ) กลับไปหาเจสัน"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2877
 msgid "List of Zabbix proxies with name, mode, encryption, compression, version, last seen, host count, item count, required values per second (vps), compatibility (current/outdated/unsupported), timeouts, proxy group name if proxy belongs to group, state (unknown/offline/online). Returns JSON."
-msgstr "รายการของ Zabix Forml พร้อมชื่อ, โหมด, การเข้ารหัส, รุ่นบีบอัด, ที่เห็นล่าสุด, จํานวนโฮสต์, จํานวนรายการ, จํานวนรายการที่ต้องการต่อวินาที (vps), ความเข้ากันได้ (ปัจจุบัน/ ไม่สนับสนุน), เวลานอกระบบ, ชื่อกลุ่มพร็อกซี หากพร็อกซีเป็นของกลุ่ม, รัฐ (ไม่รู้จัก) กลับไปหาเจสัน"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2905
 msgid "List of Zabbix proxies with name, mode, encryption, compression, version, last seen, host count, item count, required values per second (vps), compatibility (current/outdated/unsupported), timeouts, proxy group name, state (unknown/offline/online). Returns JSON."
-msgstr "รายการของ Zabix Forml ด้วยชื่อ, โหมด, การเข้ารหัส, รุ่นบีบอัด, ที่เห็นล่าสุด, จํานวนเครื่อง, จํานวนรายการ, ค่าที่ต้องการต่อวินาที (vps), ความเข้ากันได้ (ปัจจุบัน/ loaded/ unccess), เวลาออก, ชื่อกลุ่มพร็อกซี, รัฐ (ไม่รู้จัก/ offline/online) กลับไปหาเจสัน"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2935
 msgid ""
@@ -11233,11 +11233,11 @@ msgstr "การปรับปรุงแผนที่ล้มเหลว
 
 #: app/views/popup.ldap.edit.php:259
 msgid "Map user's LDAP media attributes (e.g. email) to Zabbix user media for sending notifications."
-msgstr "แผนที่คุณสมบัติของสื่อของ LDAP ของผู้ใช้ (เช่น mail) ไปยังสื่อผู้ใช้ Zabix เพื่อส่งการแจ้งเตือน"
+msgstr "จับคู่แอตทริบิวต์สื่อ LDAP ของผู้ใช้ (เช่น อีเมล) กับสื่อผู้ใช้ Zabbix เพื่อส่งการแจ้งเตือน"
 
 #: app/views/administration.authentication.edit.php:512
 msgid "Map user's SAML media attributes (e.g. email) to Zabbix user media for sending notifications."
-msgstr "คุณสมบัติของสื่อ SAML ของผู้ใช้บนแผนที่ (เช่น mail) ไปยังสื่อผู้ใช้ Zabix เพื่อส่งการแจ้งเตือน"
+msgstr "จับคู่แอตทริบิวต์สื่อ SAML ของผู้ใช้ (เช่น อีเมล) กับสื่อผู้ใช้ Zabbix เพื่อส่งการแจ้งเตือน"
 
 #: include/classes/api/services/CDashboardGeneral.php:600
 #, c-format
@@ -11307,7 +11307,7 @@ msgstr "รายการเพิ่มเติม"
 
 #: include/views/js/monitoring.sysmaps.js.php:503
 msgid "Mass update shapes"
-msgstr "แก้ไขลวดลายจุดเชื่อมต่อStencils"
+msgstr "แก้ไขรูปทรงหลายรายการพร้อมกัน"
 
 #: app/views/popup.massupdate.item.php:476 disc_prototypes.php:51 host_discovery.php:54 include/views/configuration.host.discovery.edit.php:481 include/views/configuration.item.edit.php:544 include/views/configuration.item.prototype.edit.php:570 items.php:48
 msgid "Master item"
@@ -11530,7 +11530,7 @@ msgstr ""
 
 #: include/classes/data/CItemData.php:2212
 msgid "Memory metrics of VMware Resource Pool, \"url\" - VMware service URL, \"rpid\" - VMware resource pool id, \"mode\"- consumed(default)/ballooned/overhead memory"
-msgstr "Mimetrics of VMWare Resource Project, \"url\" - URL ของบริการ VMWare, \"rpiped\" - vMware Resourcess id, \"โหมด\" (ค่าปริยาย)/ balluned/ overheadหน่วยความจํา"
+msgstr ""
 
 #: include/classes/data/CItemData.php:1727
 msgid "Memory size in bytes or in percentage from total. Returns integer for bytes; float for percentage"
@@ -12024,7 +12024,7 @@ msgstr "ที่ตั้งอยู่กึ่งกลาง"
 
 #: app/views/administration.housekeeping.edit.php:77
 msgid "Network discovery data storage period"
-msgstr "ช่วงเก็บข้อมูลของเครือข่ายName"
+msgstr "ระยะเวลาจัดเก็บข้อมูลการค้นพบเครือข่าย"
 
 #: include/classes/data/CItemData.php:1125
 msgid "Network interface list (includes interface type, status, IPv4 address, description). Returns text"
@@ -12686,7 +12686,7 @@ msgstr "รายงานการแจ้งเตือน"
 
 #: include/classes/helpers/CMenuHelper.php:153 include/classes/helpers/CRoleHelper.php:436 report4.php:65
 msgid "Notifications"
-msgstr "การแจ้งให้ทราบComment"
+msgstr "การแจ้งให้ทราบ"
 
 #: app/views/popup.action.edit.php:244
 msgid "Notify about canceled escalations"
@@ -12738,7 +12738,7 @@ msgstr "จำนวนอิเท็ม (เปิดใช้งาน/ปิ
 
 #: include/classes/data/CItemData.php:2694
 msgid "Number of items in Zabbix database."
-msgstr "จํานวนของรายการในฐานข้อมูล Zabix"
+msgstr "จำนวนรายการในฐานข้อมูล Zabbix"
 
 #: include/classes/data/CItemData.php:2750
 msgid "Number of items in proxy history that are not yet sent to the server"
@@ -12750,7 +12750,7 @@ msgstr "จํานวนของรายการในคิวที่จ
 
 #: include/classes/data/CItemData.php:2615 include/classes/data/CItemData.php:2778
 msgid "Number of items in the queue which are delayed in Zabbix server or proxy by \"from\" till \"to\" seconds, inclusive."
-msgstr "จํานวนของรายการในคิวที่จะล่าช้าในเซิร์ฟเวอร์ Zabix หรือพร็อกซีโดย \"จาก\" จนถึง \"ถึง\" วินาที, โดยรวม"
+msgstr "จำนวนรายการในคิวที่ล่าช้าในเซิร์ฟเวอร์หรือพร็อกซี Zabbix ตั้งแต่ \"จาก\" ถึง \"ถึง\" วินาที รวมปลายทั้งสอง"
 
 #: include/classes/data/CItemData.php:2687
 msgid "Number of monitored hosts"
@@ -12782,7 +12782,7 @@ msgstr "จํานวนของเธรดประมวลผลบนร
 
 #: include/classes/data/CItemData.php:2261
 msgid "Number of processors on VMware virtual machine, \"url\" - VMware service URL, \"uuid\" - VMware virtual machine global unique identifier"
-msgstr "จํานวนของตัวประมวลผลบนเครื่องเสมือน VMware, \"url\" - ที่อยู่ URL ของบริการ VMware, \"Uuid\" - เครื่องจําลองระบบเสมือนของเครื่อง VMWermaligner"
+msgstr ""
 
 #: widgets/piechart/includes/WidgetForm.php:209 widgets/svggraph/includes/WidgetForm.php:359
 msgid "Number of rows"
@@ -12806,11 +12806,11 @@ msgstr "จำนวนทริกเกอร์ (เปิดใช้งา�
 
 #: include/classes/data/CItemData.php:2799
 msgid "Number of triggers in Zabbix database."
-msgstr "จํานวนตัวจุดชนวนในฐานข้อมูล Zabix"
+msgstr "จำนวนทริกเกอร์ในฐานข้อมูล Zabbix"
 
 #: include/classes/data/CItemData.php:2701
 msgid "Number of unsupported items in Zabbix database."
-msgstr "จํานวนรายการที่ยังไม่รองรับในฐานข้อมูล Zabix"
+msgstr "จำนวนรายการที่ไม่รองรับในฐานข้อมูล Zabbix"
 
 #: include/classes/data/CItemData.php:2659
 msgid "Number of unsupported items on the host."
@@ -12826,7 +12826,7 @@ msgstr "จํานวนผู้ใช้ที่จะล็อกอิน
 
 #: include/classes/data/CItemData.php:2198
 msgid "Number of virtual machines on VMware hypervisor, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier"
-msgstr "จํานวนของเครื่องจักรเสมือนบนระบบ VMW ไฮเปอร์ไวเซอร์, \"url\" - ที่อยู่ URL ของบริการ VMware, \"Uuid\" – VMWare Hyperviserider lobal exigner"
+msgstr ""
 
 #: include/classes/data/CItemData.php:1711
 msgid "Number or percentage of inodes. Returns integer for number; float for percentage"
@@ -13069,7 +13069,7 @@ msgstr "เปิดที่อยู่ URL"
 
 #: app/views/popup.generic.php:436 include/classes/html/CHtmlPage.php:175 jsLoader.php:417
 msgid "Open Zabbix documentation in a new tab"
-msgstr "เปิดเอกสาร Sabix ในแท็บใหม่"
+msgstr "เปิดเอกสารประกอบ Zabbix ในแท็บใหม่"
 
 #: app/views/administration.script.edit.php:228
 msgid "Open in a new window"
@@ -13154,7 +13154,7 @@ msgstr "ผู้ดําเนินการ"
 
 #: app/views/popup.triggerexpr.php:131
 msgid "Operator functions"
-msgstr "ฟังก์ชัน Office"
+msgstr "ฟังก์ชันตัวดำเนินการ"
 
 #: app/views/administration.mediatype.edit.php:360 app/views/mediatype.edit.php:475
 msgid "Options"
@@ -13590,7 +13590,7 @@ msgstr "รหัสผ่าน (อีกครั้ง)"
 
 #: app/views/administration.user.edit.php:205
 msgid "Password can only be changed for users using the internal Zabbix authentication."
-msgstr "เปลี่ยนรหัสผ่านให้กับผู้ใช้ได้ โดยใช้การตรวจสอบสิทธิ์ Sabix ภายในเท่านั้น"
+msgstr "เปลี่ยนรหัสผ่านได้เฉพาะผู้ใช้ที่ยืนยันด้วยการตรวจสอบสิทธิ์ภายในของ Zabbix เท่านั้น"
 
 #: app/views/administration.user.edit.php:195
 msgid "Password is not mandatory for non internal authentication type."
@@ -13655,7 +13655,7 @@ msgstr "ร้อยละ"
 
 #: include/classes/data/CItemData.php:2401
 msgid "Percentage of host physical memory that has been consumed, \"url\" - VMware service URL, \"uuid\" - VMware virtual machine global unique identifier"
-msgstr "ร้อยละของหน่วยความจําหลักที่ถูกใช้ไปคือ \"url\" - ที่อยู่ URL ของบริการ VMWare, \"Uuid\" - ตัวระบุเสมือนเครื่อง VMWermal International"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2898
 msgid "Percentage of online proxies. Returns float."
@@ -14373,7 +14373,7 @@ msgstr "มีผู้รับอยู่แล้ว"
 
 #: app/views/reports.actionlog.list.csv.php:39
 msgid "Recipient's Zabbix username"
-msgstr "ชื่อผู้ใช้ของผู้ใช้ Zabix"
+msgstr "ชื่อผู้ใช้ Zabbix ของผู้รับ"
 
 #: app/views/reports.actionlog.list.csv.php:40
 msgid "Recipient's name"
@@ -14705,7 +14705,7 @@ msgstr "สิทธิ์ของโฮสต์ที่ต้องการ
 
 #: include/classes/data/CItemData.php:2771
 msgid "Required performance of the Zabbix server, in new values per second expected."
-msgstr "ต้องการประสิทธิภาพของเซิร์ฟเวอร์ Zabix ในค่าใหม่ต่อวินาที"
+msgstr "ประสิทธิภาพที่ต้องการของเซิร์ฟเวอร์ Zabbix ตามจำนวนค่าใหม่ต่อวินาทีที่คาดหวัง"
 
 #: app/partials/administration.system.info.php:101
 msgid "Required server performance, new values per second"
@@ -14859,7 +14859,7 @@ msgstr "คืนข้อมูล Json กับ LD Muss อธิบายว
 
 #: include/classes/data/CItemData.php:1004
 msgid "Return a JSON array with MBean objects or their attributes. Compared to jmx.discovery it does not define LLD macros. Can be used for LLD."
-msgstr "คืน Jsonอาร์เรย์ด้วย MBian วัตถุหรือคุณสมบัติของพวกเขา เทียบกับ Jmx การ ค้น พบ นี้ ไม่ ได้ หมาย ความ ว่า ลา ดีส. สามารถใช้ได้กับ LD"
+msgstr ""
 
 #: include/classes/data/CItemData.php:949
 msgid "Return first column of the first row of the SQL query result."
@@ -14871,7 +14871,7 @@ msgstr "ค่าของแอททริบิวต์ของวัตถ
 
 #: include/classes/data/CItemData.php:1655
 msgid "Returns 4-digit string containing octal number with Unix permissions"
-msgstr "คืนค่าเป็นข้อความ 4 หลักที่บรรจุหมายเลข Octrl ด้วยสิทธิ์ที่อนุญาตของ Unix"
+msgstr ""
 
 #: include/classes/data/CItemData.php:983
 msgid "Returns ICMP ping response time in seconds. Example: 0.02"
@@ -14879,11 +14879,11 @@ msgstr "คืนค่าเป็น CTM PNG ในหน่วยวินา
 
 #: include/classes/data/CItemData.php:2680
 msgid "Returns a JSON array describing the host network interfaces configured in Zabbix. Can be used for LLD."
-msgstr "REPL ของ JONE เพื่ออธิบายส่วนติดต่อผู้ใช้ของโฮสต์ที่ถูกปรับแต่งใน Zabix สามารถใช้ได้กับ LD"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2623 include/classes/data/CItemData.php:2785
 msgid "Returns a JSON object containing Zabbix server or proxy internal metrics."
-msgstr "คืนค่าเป็นออบเจ็กต์ของ Json ที่บรรจุเซิร์ฟเวอร์ Zabix หรือพร็อกซีตัววัดภายใน"
+msgstr "คืนค่าออบเจ็กต์ JSON ที่มีเมตริกภายในของเซิร์ฟเวอร์หรือพร็อกซี Zabbix"
 
 #: include/classes/data/CItemData.php:2673
 msgid "Returns availability of a particular type of checks on the host. Value of this item corresponds to availability icons in the host list. Valid types are: agent, active_agent, snmp, ipmi, jmx."
@@ -15015,7 +15015,7 @@ msgstr "รูปแบบกลุ่ม SAML"
 
 #: app/views/administration.authentication.edit.php:565
 msgid "SAML settings"
-msgstr "ตั้งค่า SOCL"
+msgstr "ตั้งค่า SAML"
 
 #: app/controllers/CControllerAuditLogList.php:254 app/controllers/CControllerPopupGeneric.php:484 app/controllers/CControllerSlaList.php:157 app/partials/service.info.php:121 app/views/popup.sla.edit.php:206 app/views/popup.sla.edit.php:226 app/views/sla.list.php:185 app/views/slareport.list.php:40 include/classes/data/CWidgetsData.php:122 include/classes/helpers/CMenuHelper.php:89
 #: include/classes/helpers/CRoleHelper.php:397 include/classes/html/widgets/fields/CWidgetFieldMultiSelectSlaView.php:35 widgets/slareport/includes/WidgetForm.php:83
@@ -15078,12 +15078,12 @@ msgstr "แบบ SLA"
 
 #: app/partials/service.info.php:61 app/views/slareport.list.php:164
 msgid "SLI"
-msgstr "แบบ SLSI"
+msgstr "SLI"
 
 #: widgets/slareport/views/widget.view.php:100
 msgctxt "compact table header"
 msgid "SLI"
-msgstr "แบบ SLSI"
+msgstr "SLI"
 
 #: app/partials/service.info.php:61 app/views/popup.sla.edit.php:62 app/views/sla.list.php:88 app/views/slareport.list.php:116 app/views/slareport.list.php:163
 msgid "SLO"
@@ -15265,7 +15265,7 @@ msgstr "จุดเริ่ม"
 
 #: include/httptest.inc.php:419
 msgid "Safari"
-msgstr "ภาษาซาฟารีName"
+msgstr "Safari"
 
 #: include/views/js/monitoring.sysmaps.js.php:60
 msgid "Sans-Serif"
@@ -15314,7 +15314,7 @@ msgstr "ค้นหารหัส QR นี้"
 
 #: include/views/configuration.httpconf.edit.php:373
 msgid "Scenario"
-msgstr "Name=เส้นเวลาName"
+msgstr "ซีนาริโอ"
 
 #: app/partials/configuration.tags.tab.php:160 widgets/web/includes/WidgetForm.php:55
 msgid "Scenario tags"
@@ -15678,7 +15678,7 @@ msgstr "เซิร์ฟเวอร์ (Proxy)"
 
 #: include/classes/setup/CSetupWizard.php:1081
 msgid "Server TLS CA file"
-msgstr "แฟ้มของบริการ TLSC"
+msgstr "แฟ้ม CA TLS ของเซิร์ฟเวอร์"
 
 #: include/classes/setup/CSetupWizard.php:890 include/classes/setup/CSetupWizard.php:1095
 msgid "Server TLS certificate issuer"
@@ -15841,11 +15841,11 @@ msgstr "ตั้งมุมมองนี้เป็นค่าปริย
 
 #: app/views/host.wizard.edit.php:493
 msgid "Set up Zabbix agent on your monitoring target by executing the following PowerShell script [with administrator permissions]:"
-msgstr "ตั้งค่าตัวแทน Zabix บนเป้าหมายติดตามของคุณ โดยการประมวลผลสคริปต์ Powerเชลล์ต่อไปนี้ [โดยมีสิทธิ์ในการจัดการ]:"
+msgstr "ตั้งค่า Zabbix agent บนเป้าหมายที่ตรวจสอบโดยรันสคริปต์ PowerShell ต่อไปนี้ [ด้วยสิทธิ์ผู้ดูแลระบบ]:"
 
 #: app/views/host.wizard.edit.php:477
 msgid "Set up Zabbix agent on your monitoring target by executing the following script [bash under root]:"
-msgstr "ตั้งค่าตัวแทน Zabix บนเป้าหมายติดตามของคุณโดยประมวลผลสคริปต์ต่อไปนี้ [bash ภายใต้ root]:"
+msgstr "ตั้งค่า Zabbix agent บนเป้าหมายที่ตรวจสอบโดยรันสคริปต์ต่อไปนี้ [bash ภายใต้ root]:"
 
 #: app/views/js/popup.itemtestedit.view.js.php:383 include/forms.inc.php:1599 include/views/js/item.preprocessing.js.php:67
 msgid "Set value to"
@@ -16101,7 +16101,7 @@ msgstr "แสดงค่า"
 
 #: app/views/administration.gui.edit.php:110
 msgid "Show warning if Zabbix server is down"
-msgstr "แสดงคําเตือนหากเซิร์ฟเวอร์ Zabix ล่ม"
+msgstr "แสดงคำเตือนหากเซิร์ฟเวอร์ Zabbix ล่ม"
 
 #: include/views/configuration.graph.edit.php:126
 msgid "Show working time"
@@ -16236,7 +16236,7 @@ msgstr ""
 
 #: app/views/host.wizard.edit.php:355
 msgid "Skip OS selection if you already have Zabbix agent installed."
-msgstr "เลือกข้ามโอเอส หากคุณได้ติดตั้ง Sabix Aagent แล้ว"
+msgstr "ข้ามการเลือก OS หากติดตั้ง Zabbix agent ไว้แล้ว"
 
 #: include/locales.inc.php:61
 msgid "Slovak (sk_SK)"
@@ -16430,7 +16430,7 @@ msgstr "การเริ่มการทํางานของ TLS ล้�
 
 #: include/classes/data/CItemData.php:2631
 msgid "Startup time of Zabbix server, Unix timestamp."
-msgstr "เวลาเริ่มต้นของเซิร์ฟเวอร์ Zabix, Unix timetamp"
+msgstr "เวลาที่เซิร์ฟเวอร์ Zabbix เริ่มทำงาน, Unix timestamp"
 
 #: app/partials/configuration.filter.items.php:180 app/partials/monitoring.latest.filter.php:187 app/partials/monitoring.latest.subfilter.php:220 app/views/maintenance.list.php:67 app/views/maintenance.list.php:98 app/views/trigger.list.php:91 include/forms.inc.php:543 include/views/configuration.host.discovery.list.php:161
 msgid "State"
@@ -17141,7 +17141,7 @@ msgstr ""
 
 #: app/views/host.wizard.edit.php:101
 msgid "The Host Wizard will help you set up your monitoring target (device, application, service, etc.) in Zabbix."
-msgstr "ตัวช่วยสร้างโฮสต์จะช่วยคุณตั้งค่าเป้าหมายติดตาม (device, application, Sabbix) ใน Zabix"
+msgstr "ตัวช่วยสร้างโฮสต์จะช่วยให้คุณตั้งค่าเป้าหมายที่ตรวจสอบ (อุปกรณ์ แอปพลิเคชัน บริการ ฯลฯ) ใน Zabbix"
 
 #: app/views/oauth.edit.php:48
 msgid "The URL must comply with the OAuth provider's policy."
@@ -17380,7 +17380,7 @@ msgstr "ฟิลด์นี้ต้องมีอย่างน้อยห
 
 #: app/controllers/CControllerMediatypeTestEdit.php:86
 msgid "This is the test message from Zabbix"
-msgstr "นี่เป็นข้อความทดสอบจาก Zabix"
+msgstr "นี่คือข้อความทดสอบจาก Zabbix"
 
 #: include/func.inc.php:2574
 msgid "This month"
@@ -17552,7 +17552,7 @@ msgstr "เวลา"
 
 #: include/classes/data/CItemData.php:2729
 msgid "Time a particular Zabbix process or a group of processes (identified by <type> and <mode>) spent in <state> in percentage."
-msgstr "เวลาที่ประมวลผล Sabix หรือกลุ่มของโพรเซส (กําหนดโดย <ttype> และ <smode> ที่ใช้ใน < state> เป็นเปอร์เซ็นต์"
+msgstr "เวลาที่โพรเซส Zabbix หรือกลุ่มโพรเซส (ระบุด้วย <type> และ <mode>) อยู่ในสถานะ <state> เป็นเปอร์เซ็นต์"
 
 #: app/views/js/mediatype.test.edit.js.php:91 app/views/js/popup.scriptexec.js.php:44
 msgid "Time elapsed:"
@@ -17719,7 +17719,7 @@ msgstr "การส่งยังไม่ยุติ กําลังย�
 
 #: include/classes/data/CItemData.php:935
 msgid "Transform SQL query result into a JSON array for low-level discovery."
-msgstr "แปลงการสืบค้น SQL เป็น jsonอาร์เรย์สําหรับการค้นพบระดับต่ํา"
+msgstr ""
 
 #: include/classes/data/CItemData.php:942
 msgid "Transform SQL query result into a JSON array."
@@ -18178,7 +18178,7 @@ msgstr "ไม่สามารถเปลี่ยนสิทธิ์ใน
 
 #: include/classes/server/CZabbixServer.php:673 include/classes/server/CZabbixServer.php:681 jsrpc.php:86 jsrpc.php:101
 msgid "Unable to connect to the Zabbix server due to TLS settings. Some functions are unavailable."
-msgstr "ไม่สามารถเชื่อมต่อไปยังเซิร์ฟเวอร์ Zabix ได้ เนื่องจากการตั้งค่า TLS ไม่มีฟังก์ชันบางตัว"
+msgstr "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Zabbix เพราะการตั้งค่า TLS จึงใช้ฟังก์ชันบางอย่างไม่ได้"
 
 #: include/classes/core/CConfigFile.php:237
 msgid "Unable to create the configuration file."
@@ -18223,11 +18223,11 @@ msgstr "ไม่สามารถรับรุ่นของเวลาส
 
 #: app/views/administration.housekeeping.edit.php:173
 msgid "Unable to retrieve compression support status of TimescaleDB time-series database extension for PostgreSQL."
-msgstr "ไม่สามารถรับสถานะของการรองรับการบีบอัดของเวลาSizeDB สําหรับส่วนขยายฐานข้อมูล PostgrestQL ได้"
+msgstr "ไม่สามารถดึงสถานะการรองรับการบีบอัดของส่วนขยาย TimescaleDB สำหรับ PostgreSQL ได้"
 
 #: app/views/administration.housekeeping.edit.php:178
 msgid "Unable to retrieve version of TimescaleDB time-series database extension for PostgreSQL."
-msgstr "ไม่สามารถรับค่าส่วนขยายของเวลาสเกลดีบีสําหรับส่วนขยายฐานข้อมูล PostgrestQL ได้"
+msgstr "ไม่สามารถดึงเวอร์ชันของส่วนขยาย TimescaleDB สำหรับ PostgreSQL ได้"
 
 #: include/views/mfa.login.php:65
 #, c-format
@@ -18420,7 +18420,7 @@ msgstr ""
 
 #: app/partials/administration.system.info.php:206 app/views/administration.housekeeping.edit.php:169
 msgid "Unsupported TimescaleDB time-series database extension for PostgreSQL is used."
-msgstr "ส่วนขยายฐานข้อมูลของ PostgrestQL ที่ไม่รองรับ"
+msgstr "กำลังใช้ส่วนขยาย TimescaleDB สำหรับ PostgreSQL ที่ไม่รองรับ"
 
 #: app/views/administration.housekeeping.edit.php:190
 #, c-format
@@ -18555,7 +18555,7 @@ msgstr "เวลาทํางาน"
 
 #: include/classes/data/CItemData.php:2806
 msgid "Uptime of Zabbix server process in seconds."
-msgstr "ช่วงเวลาของเซิร์ฟเวอร์ Zabix ในหน่วยวินาที"
+msgstr "เวลาทำงานของโพรเซสเซิร์ฟเวอร์ Zabbix เป็นวินาที"
 
 #: include/actions.inc.php:61
 msgid "Uptime/Downtime"
@@ -19081,7 +19081,7 @@ msgstr "VMware hyperviservor name, \"url\" - URL ของบริการ VMw
 
 #: include/classes/data/CItemData.php:2114
 msgid "VMware hypervisor network input statistics, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier, \"mode\"- bps"
-msgstr "VMware Hypervisor สถิติการป้อนข้อมูลเครือข่าย \"url\" - ที่อยู่ URL ของบริการ VMware, \"Uuid\" - VMWแวร์ ไฮเปอร์ไวเซอร์ระดับโลก \"โหมด\" - bps\""
+msgstr ""
 
 #: include/classes/data/CItemData.php:2121
 msgid "VMware hypervisor network interface speed, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier, <ifname> - interface name"
@@ -19089,7 +19089,7 @@ msgstr "VMware Hypervisider interfect, \"url\" - URL ของบริการ
 
 #: include/classes/data/CItemData.php:2128
 msgid "VMware hypervisor network output statistics, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier, \"mode\"- bps"
-msgstr "VMware hypervisor เครือข่ายแสดงสถิติ, \"url\" - ที่อยู่ URL ของบริการ VMware, \"Uid\" - VMWแวร์ ไฮเปอร์ไวเซอร์ระดับโลก \"โหมด\" - bps\""
+msgstr ""
 
 #: include/classes/data/CItemData.php:2135
 msgid "VMware hypervisor performance counter, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier, \"path\" - performance counter path, \"instance\" - performance counter instance"
@@ -19109,7 +19109,7 @@ msgstr "VMWerfigner perviser application in Hz, \"url\" - ที่อยู่ 
 
 #: include/classes/data/CItemData.php:2149
 msgid "VMware hypervisor property , \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier, \"prop\" - property path"
-msgstr "คุณสมบัติของ VMware ไฮเปอร์ไวเซอร์, \"url\" - ตําแหน่ง URL ของบริการ VMware, \"uid\" - VMWแวร์ ไฮเปอร์ไวเซอร์ระดับโลก, \"ตําแหน่งคุณสมบัติ\" - พาธคุณสมบัติ"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2058
 msgid "VMware hypervisor sensors value, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier. Returns JSON"
@@ -19125,7 +19125,7 @@ msgstr "VMware hypervisider status, \"url\" - URL ของบริการ VM
 
 #: include/classes/data/CItemData.php:2177
 msgid "VMware hypervisor tags array, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier. Returns JSON"
-msgstr "รายการป้ายกํากับของ VMware hyperviser, \"url\" - ที่อยู่ URL ของบริการ VMware, \"Uid\" - VMWแวร์ ไฮเปอร์ไวเซอร์ทั่วโลก เจ สัน กลับ มา"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2044
 msgid "VMware hypervisor total memory size, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier"
@@ -19133,7 +19133,7 @@ msgstr "ขนาดหน่วยความจํารวมของ VMwar
 
 #: include/classes/data/CItemData.php:2184
 msgid "VMware hypervisor uptime, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier"
-msgstr "VMware hypervisider uptime, \"url\" - URL ของบริการ VMware, \"uid\" - VMware Hypervisider of Global exigner"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2100
 msgid "VMware hypervisor used memory size, \"url\" - VMware service URL, \"uuid\" - VMware hypervisor global unique identifier"
@@ -19149,7 +19149,7 @@ msgstr "VMware Hyperviserver รุ่น \"url\" - ที่อยู่ URL �
 
 #: include/classes/data/CItemData.php:1897
 msgid "VMware service full name, \"url\" - VMware service URL"
-msgstr "บริการ VMWare ชื่อเต็ม \"url\" - ตําแหน่ง URL ของบริการ VMWแวร์"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2219
 msgid "VMware service version, \"url\" - VMware service URL"
@@ -19281,7 +19281,7 @@ msgstr "VMware สถานะของเครื่องมือเสม�
 
 #: include/classes/data/CItemData.php:2394
 msgid "VMware virtual machine total memory size, \"url\" - VMware service URL, \"uuid\" - VMware virtual machine global unique identifier"
-msgstr "VMware ขนาดหน่วยความจําเสมือนทั้งหมดของเครื่อง, \"url\" - ตําแหน่ง URL ของบริการ VMware, \"Uuid\" - ตัวระบุเสมือนเครื่อง VMWermal International"
+msgstr ""
 
 #: include/classes/data/CItemData.php:2499
 msgid "VMware virtual machine uncommitted storage space, \"url\" - VMware service URL, \"uuid\" - VMware virtual machine global unique identifier"
@@ -19498,7 +19498,7 @@ msgstr "การตรวจสอบสิทธิ์"
 
 #: app/views/host.wizard.edit.php:407
 msgid "Verify Zabbix server, proxy, or cluster address"
-msgstr "ตรวจสอบเซิร์ฟเวอร์ Zabix,พร็อกซี หรือที่อยู่กลุ่มผู้ใช้"
+msgstr "ตรวจสอบที่อยู่ของเซิร์ฟเวอร์ พร็อกซี หรือคลัสเตอร์ Zabbix"
 
 #: include/classes/setup/CSetupWizard.php:655
 msgid "Verify database certificate"
@@ -19514,11 +19514,11 @@ msgstr "รุ่น"
 
 #: include/classes/data/CItemData.php:927
 msgid "Version of Zabbix agent. Returns string"
-msgstr "รุ่นของ Zabix Agent. ข้อความคืนค่า"
+msgstr "รุ่นของ Zabbix agent คืนค่าเป็นข้อความ"
 
 #: include/classes/data/CItemData.php:2827
 msgid "Version of Zabbix server or proxy"
-msgstr "รุ่นของ Sabix เซิร์ฟเวอร์หรือพร็อกซี"
+msgstr "รุ่นของเซิร์ฟเวอร์หรือพร็อกซี Zabbix"
 
 #: widgets/hostavail/includes/WidgetForm.php:57 widgets/problemsbysv/includes/WidgetForm.php:89
 msgid "Vertical"
@@ -19722,7 +19722,7 @@ msgstr "เมื่อทํางาน"
 
 #: include/classes/html/widgets/fields/CWidgetFieldTimePeriodView.php:59 include/classes/html/widgets/fields/CWidgetFieldTimePeriodView.php:96 include/classes/widgets/fields/CWidgetFieldTimePeriod.php:83 jsLoader.php:195 jsLoader.php:199
 msgid "Widget"
-msgstr "วิดเจ็ตComment"
+msgstr "วิดเจ็ต"
 
 #: include/classes/api/services/CDashboardGeneral.php:352
 #, c-format
@@ -20063,67 +20063,67 @@ msgstr "การ ปลุก เร้า ของ ซาบบิกซ์"
 
 #: app/views/connector.edit.php:49
 msgid "Zabbix Streaming Protocol v1.0"
-msgstr "Zabix การสายข้อมูลโพรโทคอล v1. 0"
+msgstr "Zabbix Streaming Protocol v1.0"
 
 #: include/classes/helpers/CMenuHelper.php:427
 msgid "Zabbix Technical Support"
-msgstr "การรองรับเทคนิค Zabix"
+msgstr "ฝ่ายสนับสนุนด้านเทคนิคของ Zabbix"
 
 #: app/views/administration.script.edit.php:114 app/views/administration.timeouts.edit.php:44 app/views/popup.proxy.edit.php:206 include/discovery.inc.php:56 include/items.inc.php:86
 msgid "Zabbix agent"
-msgstr "เอเย่นต์ Zabix"
+msgstr "Zabbix agent"
 
 #: widgets/hostavail/includes/WidgetForm.php:47
 msgid "Zabbix agent (active checks)"
-msgstr "Agent Zabix (การตรวจสอบการทํางาน)"
+msgstr "Zabbix agent (active checks)"
 
 #: include/items.inc.php:87
 msgid "Zabbix agent (active)"
-msgstr "Agent Zabix (ทํางาน) Name"
+msgstr "Zabbix agent (active)"
 
 #: widgets/hostavail/includes/WidgetForm.php:48
 msgid "Zabbix agent (passive checks)"
-msgstr "Zabix agent (การตรวจสอบแบบพาสซีฟ)"
+msgstr "Zabbix agent (passive checks)"
 
 #: app/views/js/host.wizard.edit.js.php:91
 msgid "Zabbix agent initiates connections to Zabbix server or proxy to send data. Recommended for monitoring targets behind a firewall."
-msgstr "Zabix Aagent เริ่มการเชื่อมต่อไปยังเซิร์ฟเวอร์ Zabix หรือพร็อกซีเพื่อส่งข้อมูล แนะนําให้ติดตามเป้าหมาย หลังไฟร์วอลล์"
+msgstr "Zabbix agent เป็นฝ่ายเชื่อมต่อไปยังเซิร์ฟเวอร์หรือพร็อกซี Zabbix เพื่อส่งข้อมูล เหมาะกับเป้าหมายที่ตรวจสอบซึ่งอยู่หลังไฟร์วอลล์"
 
 #: app/views/host.wizard.edit.php:422
 msgid "Zabbix agent must be able to connect to the specified address or list of addresses."
-msgstr "Sabix Aager ต้องสามารถเชื่อมต่อกับที่อยู่หรือที่อยู่ที่ระบุได้"
+msgstr "Zabbix agent ต้องเชื่อมต่อไปยังที่อยู่หรือรายการที่อยู่ที่ระบุได้"
 
 #: app/views/host.wizard.edit.php:863
 msgid "Zabbix documentation"
-msgstr "เอกสารของ Zabix"
+msgstr "เอกสารประกอบ Zabbix"
 
 #: app/partials/administration.system.info.php:45
 msgid "Zabbix frontend version"
-msgstr "รุ่นของ ZabixProadend"
+msgstr "รุ่นของ Zabbix frontend"
 
 #: include/validate.inc.php:387
 msgid "Zabbix has received an incorrect request."
-msgstr "Zabix ได้รับการร้องขอไม่ถูกต้อง"
+msgstr "Zabbix ได้รับคำขอที่ไม่ถูกต้อง"
 
 #: include/items.inc.php:91
 msgid "Zabbix internal"
-msgstr "Zabix ภายใน"
+msgstr "Zabbix internal"
 
 #: include/perm.inc.php:48
 msgid "Zabbix internal authentication"
-msgstr "การตรวจสอบสิทธิ์ภายในของ Zabix"
+msgstr "การตรวจสอบสิทธิ์ภายในของ Zabbix"
 
 #: app/views/administration.authentication.edit.php:169
 msgid "Zabbix login form"
-msgstr "แบบฟอร์มล็อกอิน Zabix"
+msgstr "ฟอร์มล็อกอินของ Zabbix"
 
 #: app/views/administration.script.edit.php:115
 msgid "Zabbix proxy or server"
-msgstr "พร็อกซีหรือแม่ข่าย Zabix"
+msgstr "พร็อกซีหรือเซิร์ฟเวอร์ Zabbix"
 
 #: app/views/administration.script.edit.php:116
 msgid "Zabbix server"
-msgstr "เซิร์ฟเวอร์ Zabix"
+msgstr "เซิร์ฟเวอร์ Zabbix"
 
 #: include/classes/server/CZabbixServer.php:626
 #, c-format
@@ -20135,19 +20135,19 @@ msgstr ""
 
 #: app/views/administration.script.edit.php:115
 msgid "Zabbix server (proxy)"
-msgstr "เซิร์ฟเวอร์ Zabix ( proxy)"
+msgstr "เซิร์ฟเวอร์ Zabbix (พร็อกซี)"
 
 #: app/views/administration.miscconfig.edit.php:112
 msgid "Zabbix server and proxy"
-msgstr "เซิร์ฟเวอร์ Zabix และพร็อกซี"
+msgstr "เซิร์ฟเวอร์ Zabbix และพร็อกซี"
 
 #: app/views/administration.miscconfig.edit.php:107
 msgid "Zabbix server and proxy: secrets are retrieved from Vault by both Zabbix server and proxies, allowing them to resolve macros independently."
-msgstr "Zabix เซิร์ฟเวอร์และพร็อกซี: ความลับของ Zabix ถูกดึงข้อมูลจากบริการ Zabix และ February แล้ว อนุญาตให้พวกเขาแก้ปัญหาแมโครได้ด้วยตัวเอง"
+msgstr "เซิร์ฟเวอร์และพร็อกซี Zabbix: ทั้งเซิร์ฟเวอร์และพร็อกซีดึงข้อมูลลับจาก Vault เอง ทำให้แก้มาโครได้อย่างอิสระ"
 
 #: jsrpc.php:91
 msgid "Zabbix server is not running: the information displayed may not be current."
-msgstr "เซิร์ฟเวอร์ Zabix ไม่ได้ทํางานอยู่: ข้อมูลที่แสดงอาจจะยังไม่ปรากฏอยู่"
+msgstr "เซิร์ฟเวอร์ Zabbix ไม่ทำงานอยู่: ข้อมูลที่แสดงอาจไม่เป็นปัจจุบัน"
 
 #: app/partials/administration.system.info.php:34
 msgid "Zabbix server is running"
@@ -20155,23 +20155,23 @@ msgstr "Zabbix server กำลังทำงาน"
 
 #: include/classes/setup/CSetupWizard.php:711 include/classes/setup/CSetupWizard.php:870
 msgid "Zabbix server name"
-msgstr "ชื่อเซิร์ฟเวอร์ Zabix"
+msgstr "ชื่อเซิร์ฟเวอร์ Zabbix"
 
 #: app/views/js/host.wizard.edit.js.php:92
 msgid "Zabbix server or proxy initiates connections to Zabbix agent to request data. Recommended for networks without a firewall or with open firewall ports."
-msgstr "Zabix เซิร์ฟเวอร์หรือพร็อกซี เริ่มงานการเชื่อมต่อกับ Sabix Aager เพื่อร้องขอข้อมูล แนะนําเครือข่ายโดยไม่มีไฟร์วอลล์ หรือพอร์ตเปิดไฟร์วอลล์"
+msgstr "เซิร์ฟเวอร์หรือพร็อกซี Zabbix เป็นฝ่ายเชื่อมต่อไปยัง Zabbix agent เพื่อร้องขอข้อมูล เหมาะกับเครือข่ายที่ไม่มีไฟร์วอลล์หรือมีการเปิดพอร์ตไฟร์วอลล์"
 
 #: app/partials/administration.system.info.php:40
 msgid "Zabbix server version"
-msgstr "รุ่นเซิร์ฟเวอร์ Zabix"
+msgstr "รุ่นเซิร์ฟเวอร์ Zabbix"
 
 #: app/views/administration.miscconfig.edit.php:105
 msgid "Zabbix server: secrets are retrieved from Vault by Zabbix server and forwarded to proxies when needed."
-msgstr "เซิร์ฟเวอร์ Zabix: เคล็ดลับต่าง ๆ จะถูกดึงข้อมูลมาจากเซิร์ฟเวอร์ Zabix และส่งต่อไปยัง February เมื่อต้องการ"
+msgstr "เซิร์ฟเวอร์ Zabbix: เซิร์ฟเวอร์ดึงข้อมูลลับจาก Vault และส่งต่อให้พร็อกซีเมื่อจำเป็น"
 
 #: include/items.inc.php:92
 msgid "Zabbix trapper"
-msgstr "ตัวดักจับ Zabix"
+msgstr "Zabbix trapper"
 
 #: include/classes/html/CFilter.php:258 include/classes/html/CTabFilter.php:324
 msgid "Zoom out"
@@ -20538,11 +20538,11 @@ msgstr "ฟังก์ชัน EXACT () จะคืนค่ากลับ�
 
 #: app/controllers/CControllerPopupTriggerExpr.php:438
 msgid "bitnot() - Bitwise NOT"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: app/controllers/CControllerPopupTriggerExpr.php:445
 msgid "bitor() - Bitwise OR"
-msgstr "HOURSฟังก์ชัน"
+msgstr ""
 
 #: app/controllers/CControllerPopupTriggerExpr.php:458
 msgid "bitrshift() - Bitwise shift right"
@@ -20550,7 +20550,7 @@ msgstr "ฟังก์ชัน Bitrshift ()  - การเลื่อนบ�
 
 #: app/controllers/CControllerPopupTriggerExpr.php:471
 msgid "bitxor() - Bitwise exclusive OR"
-msgstr "HOURSฟังก์ชัน"
+msgstr ""
 
 #: app/views/administration.trigdisplay.edit.php:49 app/views/administration.trigdisplay.edit.php:61 app/views/administration.trigdisplay.edit.php:73 app/views/administration.trigdisplay.edit.php:85
 msgid "blinking"
@@ -20590,7 +20590,7 @@ msgstr "ไม่สามารถกําหนดหมายเลขบน
 
 #: include/classes/api/services/CItemGeneral.php:2179
 msgid "cannot be an item ID from another host or template"
-msgstr "ไม่สามารถเป็นID ของโฮสต์หรือแม่แบบอื่นได้"
+msgstr "ไม่สามารถเป็น ID ของโฮสต์หรือเทมเพลตอื่นได้"
 
 #: include/classes/api/services/CItemGeneral.php:2193
 msgid "cannot be an item prototype ID from another LLD rule"
@@ -20868,7 +20868,7 @@ msgstr "ไม่ตรงกัน"
 
 #: app/controllers/CControllerPopupTriggerExpr.php:598
 msgid "e() - Returns Euler's number"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: app/views/mediatype.list.php:112 app/views/mediatype.list.php:117
 msgid "email"
@@ -20940,7 +20940,7 @@ msgstr "ฟังก์ชัน LEN () จะคืนค่ากลับม�
 
 #: app/controllers/CControllerPopupTriggerExpr.php:626
 msgid "firstclock() - Timestamp of the oldest value in the specified time interval"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: app/controllers/CControllerPopupTriggerExpr.php:631
 msgid "floor() - Rounds down to the nearest smaller integer"
@@ -20956,7 +20956,7 @@ msgstr "สี่"
 
 #: app/controllers/CControllerPopupTriggerExpr.php:645
 msgid "fuzzytime() - Difference between item value (as timestamp) and Zabbix server timestamp is less than or equal to T seconds (1 - true, 0 - false)"
-msgstr "Foottime () - ความแตกต่างระหว่างค่าของรายการ (เช่น timetamp) กับเซิร์ฟเวอร์ Zabix timetamp นั้นน้อยกว่าหรือเท่ากับ t วินาที (1 - true, 0 - เท็จ)"
+msgstr ""
 
 #: include/classes/validators/CApiInputValidator.php:3317
 msgid "geographical coordinates (values of comma separated latitude and longitude) are expected"
@@ -20969,7 +20969,7 @@ msgstr "ตั้งค่าการดูแลบ้านทั่วไป
 
 #: include/classes/api/services/CScript.php:726
 msgid "global script execution on Zabbix server is disabled by server configuration"
-msgstr "การประมวลผลสคริปต์ทั่วไปบนเซิร์ฟเวอร์ Zabix ถูกปิดการใช้งานโดยการปรับแต่งเซิร์ฟเวอร์"
+msgstr "การรันสคริปต์ส่วนกลางบนเซิร์ฟเวอร์ Zabbix ถูกปิดใช้งานโดยการตั้งค่าเซิร์ฟเวอร์"
 
 #: include/html.inc.php:795 include/html.inc.php:800 include/html.inc.php:805
 msgid "graph"
@@ -21282,7 +21282,7 @@ msgstr "มีรายการที่มีหมายเลขผู้ใ
 
 #: app/controllers/CControllerPopupTriggerExpr.php:688
 msgid "jsonpath() - Returns JSONPath result"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: include/classes/parsers/CItemKey.php:54
 msgid "key is empty"
@@ -21459,7 +21459,7 @@ msgstr ""
 
 #: app/controllers/CControllerPopupTriggerExpr.php:838
 msgid "mod() - Division remainder"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: app/controllers/CControllerPopupTriggerExpr.php:851
 msgid "monodec() - Check for continuous item value decrease (1 - data is monotonic, 0 - otherwise), Mode (strict - require strict monotonicity)"
@@ -21601,7 +21601,7 @@ msgstr "ไม่ได้รับอนุญาตให้แก้ปัญ
 
 #: app/controllers/CControllerPopupTriggerExpr.php:865
 msgid "nodata() - No data received during period of time T (1 - true, 0 - false), Mode (strict - ignore proxy time delay in sending data)"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: include/classes/validators/CApiInputValidator.php:3781
 msgid "non-active intervals cannot fill the entire time"
@@ -21732,7 +21732,7 @@ msgstr "Rid () - ค่าจํานวนเต็มสุ่ม"
 
 #: app/controllers/CControllerPopupTriggerExpr.php:915
 msgid "rate() - Returns per-second average rate for monotonically increasing counters"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: include/classes/api/services/CService.php:2422
 #, c-format
@@ -22008,7 +22008,7 @@ msgstr "เวลา - เวลาปัจจุบัน"
 
 #: app/controllers/CControllerPopupTriggerExpr.php:1068
 msgid "timeleft() - Time to reach threshold estimated based on period T"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นชั่วโมงของค่าเวลาที่กําหนด"
+msgstr ""
 
 #: include/classes/api/services/CProxy.php:835
 msgid "timeouts are disabled because the proxy and server versions do not match"
@@ -22076,7 +22076,7 @@ msgstr "เรียกใช้โดยใช้หมายเลขผู้
 
 #: app/controllers/CControllerPopupTriggerExpr.php:1167
 msgid "trim() - Remove specified characters from the beginning and the end of a string"
-msgstr "HOURSฟังก์ชัน () จะคืนค่ากลับมาเป็นข้อความ"
+msgstr ""
 
 #: app/controllers/CControllerPopupTriggerExpr.php:1180
 msgid "truncate() - Truncates a value to decimal places"
