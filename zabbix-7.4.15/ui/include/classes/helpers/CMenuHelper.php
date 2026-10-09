@@ -146,6 +146,12 @@ class CMenuHelper {
 				: null,
 			CWebUser::checkAccess(CRoleHelper::UI_REPORTS_NOTIFICATIONS)
 				? (new CMenuItem(_('Notifications')))->setUrl(new CUrl('report4.php'), 'report4.php')
+				: null,
+			// Custom PDF report app (zabbix-pdf-report) served alongside the frontend.
+			CWebUser::checkAccess(CRoleHelper::UI_REPORTS_SYSTEM_INFO)
+				? (new CMenuItem(_('PDF report')))
+					->setUrl(new CUrl('zabbix-pdf-report/login.php'), 'zabbix-pdf-report/login.php')
+					->setTarget('_blank')
 				: null
 		];
 		$submenu_reports = array_filter($submenu_reports);

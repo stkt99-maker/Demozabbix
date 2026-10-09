@@ -22994,3 +22994,6 @@ msgstr "การมอนิเตอริง → ปัญหา"
 
 msgid "Monitoring → Latest data"
 msgstr "การมอนิเตอริง → ข้อมูลล่าสุด"
+
+msgid "PDF report"
+msgstr "รายงาน PDF"
