@@ -147,11 +147,13 @@ class CMenuHelper {
 			CWebUser::checkAccess(CRoleHelper::UI_REPORTS_NOTIFICATIONS)
 				? (new CMenuItem(_('Notifications')))->setUrl(new CUrl('report4.php'), 'report4.php')
 				: null,
-			// Custom PDF report app (zabbix-pdf-report) served alongside the frontend.
+			// Built-in PDF report (ported from the standalone zabbix-pdf-report
+			// app; engine under ui/pdfreport/, action in CRouter.php).
 			CWebUser::checkAccess(CRoleHelper::UI_REPORTS_SYSTEM_INFO)
-				? (new CMenuItem(_('PDF report')))
-					->setUrl(new CUrl('zabbix-pdf-report/login.php'), 'zabbix-pdf-report/login.php')
-					->setTarget('_blank')
+				? (new CMenuItem(_('PDF report')))->setAction('pdfreport.view')
+				: null,
+			CWebUser::checkAccess(CRoleHelper::UI_REPORTS_SYSTEM_INFO)
+				? (new CMenuItem(_('PDF report settings')))->setAction('pdfreport.settings')
 				: null
 		];
 		$submenu_reports = array_filter($submenu_reports);
@@ -170,10 +172,6 @@ class CMenuHelper {
 			!CWebUser::isGuest()
 				? (new CMenuItem(_('Network topology (Hybrid)')))
 					->setUrl(new CUrl('topo_tree.php'), 'topo_tree.php')
-				: null,
-			!CWebUser::isGuest()
-				? (new CMenuItem(_('Monitoring summary (Demo)')))
-					->setUrl(new CUrl('mon_dashboard.php'), 'mon_dashboard.php')
 				: null
 		];
 		$submenu_topology = array_filter($submenu_topology);
