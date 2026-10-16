@@ -41,7 +41,7 @@ $guest = $data['guest_login_url']
 $current_lang = CWebUser::getLang();
 $link_en = new CLink('EN', (new CUrl('index.php'))->setArgument('lang', 'en'));
 $link_th = new CLink('ไทย', (new CUrl('index.php'))->setArgument('lang', 'th'));
-if ($current_lang === 'th_TH') {
+if ($current_lang === 'th') {
 	$link_th->addClass('lang-active');
 }
 else {
