@@ -22997,3 +22997,27 @@ msgstr "การมอนิเตอริง → ข้อมูลล่า�
 
 msgid "PDF report"
 msgstr "รายงาน PDF"
+
+msgid "— Interface not bound —"
+msgstr "— ยังไม่ผูกอินเทอร์เฟซ —"
+
+msgid "Interface at source end"
+msgstr "อินเทอร์เฟซฝั่งต้นทาง"
+
+msgid "Interface at destination end"
+msgstr "อินเทอร์เฟซฝั่งปลายทาง"
+
+msgid "Link bandwidth (Mbps, 0 = unknown)"
+msgstr "แบนด์วิดท์ของลิงก์ (Mbps, 0 = ไม่ระบุ)"
+
+msgid "Link OK"
+msgstr "ลิงก์ปกติ"
+
+msgid "Link down"
+msgstr "ลิงก์ขาด"
+
+msgid "Interface binding needs the new database columns first — run topo_link_status.sql."
+msgstr "การผูกอินเทอร์เฟซต้องเพิ่มคอลัมน์ในฐานข้อมูลก่อน — รัน topo_link_status.sql ก่อน"
+
+msgid "Bandwidth must be between 0 and 1000000 Mbps."
+msgstr "แบนด์วิดท์ต้องอยู่ระหว่าง 0 ถึง 1000000 Mbps"

@@ -90,7 +90,9 @@ function topoLoad(): array {
 
 	$links = [];
 	// DBfetch($res, false): service/proto may be NULL — keep them as '' instead of '0'.
-	$res = DBselect('SELECT topo_linkid AS linkid, nodeida, nodeidb, service, proto FROM topo_link ORDER BY topo_linkid');
+	// ifa/ifb/mbps (live status bindings) exist only after topo_link_status.sql ran.
+	$res = DBselect('SELECT topo_linkid AS linkid, nodeida, nodeidb, service, proto'.
+			(topoLinkLiveCols() ? ', ifa, ifb, mbps' : '').' FROM topo_link ORDER BY topo_linkid');
 
 	while ($row = DBfetch($res, false)) {
 		$links[] = [
@@ -98,7 +100,10 @@ function topoLoad(): array {
 			'a'       => (int) $row['nodeida'],
 			'b'       => (int) $row['nodeidb'],
 			'service' => $row['service'] !== null ? $row['service'] : '',
-			'proto'   => $row['proto'] !== null ? $row['proto'] : ''
+			'proto'   => $row['proto'] !== null ? $row['proto'] : '',
+			'ifa'     => isset($row['ifa']) ? $row['ifa'] : '',
+			'ifb'     => isset($row['ifb']) ? $row['ifb'] : '',
+			'mbps'    => isset($row['mbps']) ? (int) $row['mbps'] : 0
 		];
 	}
 
@@ -267,6 +272,257 @@ function topoTraffic(array $nodes): array {
 	return $traffic;
 }
 
+/** Age after which the latest history value is too old to compute utilization. */
+const TOPO_UTIL_STALE_SECS = 120;
+
+/**
+ * Agent/SNMP availability per host: 0 = down (some interface reports
+ * unavailable and none reports available), 1 = up, 2 = unknown/mixed. Hosts
+ * without any agent/SNMP interface are not listed at all — unknown, never down.
+ */
+function topoHostAvail(array $hostids): array {
+	if (!$hostids) {
+		return [];
+	}
+
+	$list = implode(',', array_map('intval', $hostids));
+	$flags = [];
+	$res = DBselect('SELECT hostid, available FROM interface WHERE hostid IN ('.$list.')'.
+			' AND type IN ('.INTERFACE_TYPE_AGENT.','.INTERFACE_TYPE_SNMP.')');
+
+	while ($row = DBfetch($res)) {
+		$hid = (int) $row['hostid'];
+		$flags[$hid] = $flags[$hid] ?? ['up' => false, 'down' => false];
+
+		if ((int) $row['available'] === 1) {
+			$flags[$hid]['up'] = true;
+		}
+		elseif ((int) $row['available'] === 2) {
+			$flags[$hid]['down'] = true;
+		}
+	}
+
+	$avail = [];
+
+	foreach ($flags as $hid => $f) {
+		$avail[$hid] = $f['down'] && !$f['up'] ? 0 : ($f['up'] ? 1 : 2);
+	}
+
+	return $avail;
+}
+
+/**
+ * Live state of the bound links: latest in/out traffic per bound interface
+ * (bytes-mode items converted to bps, bps-mode items pass through as-is),
+ * utilization against the link capacity, and down detection (a bound host
+ * down, or a bound interface whose net.if.status item reads 0). Traffic=0 is
+ * never a down signal — idle ports must stay green.
+ * Returns ['links' => [linkid => ['in' => bps|null, 'out' => bps|null,
+ * 'util' => %|null, 'down' => bool]], 'avail' => [hostid => 0|1|2]] — both
+ * empty when nothing is bound, the common case, at no query cost.
+ * Values older than TOPO_UTIL_STALE_SECS report no utilization.
+ */
+function topoLinkState(array $nodes, array $links): array {
+	if (!topoLinkLiveCols()) {
+		return ['links' => [], 'avail' => []];
+	}
+
+	// hostid => interface names bound to at least one link end
+	$bound = [];
+
+	foreach ($links as $l) {
+		foreach ([['a', 'ifa'], ['b', 'ifb']] as [$end, $ifcol]) {
+			$node = $nodes[$l[$end]] ?? null;
+
+			if ($node === null || $node['type'] !== 'device' || $node['hostid'] === null
+					|| $l[$ifcol] === '') {
+				continue;
+			}
+
+			$bound[$node['hostid']][$l[$ifcol]] = true;
+		}
+	}
+
+	if (!$bound) {
+		return ['links' => [], 'avail' => []];
+	}
+
+	$hostids = array_map('intval', array_keys($bound));
+	$avail = topoHostAvail($hostids);
+
+	// latest values of the bound interfaces' in/out (+ status) items
+	$items = [];
+	$res = DBselect('SELECT itemid, hostid, key_, value_type FROM items'.
+			' WHERE hostid IN ('.implode(',', $hostids).') AND status = 0'.
+			' AND (key_ LIKE \'net.if.in[%\' OR key_ LIKE \'net.if.out[%\''.
+			' OR key_ LIKE \'net.if.status[%\')');
+
+	while ($row = DBfetch($res)) {
+		$k = topoIfKeyParse($row['key_']);
+		$hid = (int) $row['hostid'];
+
+		// keep plain rate counters only — dropped/errors/packets are different metrics
+		if ($k === null || !isset($bound[$hid]) || !isset($bound[$hid][$k['if']])
+				|| (($k['dir'] === 'in' || $k['dir'] === 'out')
+					&& $k['mode'] !== '' && $k['mode'] !== 'bytes' && $k['mode'] !== 'bps')) {
+			continue;
+		}
+
+		$items[(int) $row['itemid']] = [
+			'hostid' => $hid,
+			'if'     => $k['if'],
+			'dir'    => $k['dir'],
+			'mode'   => $k['mode'],
+			'vt'     => (int) $row['value_type']
+		];
+	}
+
+	$by_table = ['history' => [], 'history_uint' => []];
+
+	foreach ($items as $itemid => $item) {
+		$by_table[$item['vt'] === 3 ? 'history_uint' : 'history'][] = $itemid;
+	}
+
+	$values = [];
+	$clocks = [];
+
+	foreach ($by_table as $table => $itemids) {
+		if (!$itemids) {
+			continue;
+		}
+
+		$res = DBselect('SELECT DISTINCT ON (itemid) itemid, value, clock FROM '.$table.
+				' WHERE itemid IN ('.implode(',', $itemids).') ORDER BY itemid, clock DESC');
+
+		while ($row = DBfetch($res)) {
+			$values[(int) $row['itemid']] = (float) $row['value'];
+			$clocks[(int) $row['itemid']] = (int) $row['clock'];
+		}
+	}
+
+	$now = time();
+	$samples = [];   // hostid|if => latest in/out in bps + freshest clock
+	$status = [];    // hostid|if => latest net.if.status value, 0 = down
+
+	foreach ($items as $itemid => $item) {
+		if (!isset($values[$itemid])) {
+			continue;
+		}
+
+		$key = $item['hostid'].'|'.$item['if'];
+
+		if ($item['dir'] === 'status') {
+			$status[$key] = $values[$itemid] > 0 ? 1 : 0;
+
+			continue;
+		}
+
+		if (!isset($samples[$key])) {
+			$samples[$key] = ['in' => 0.0, 'out' => 0.0, 'clock' => 0];
+		}
+
+		// bytes/s items need the ×8, bps items already carry bits
+		$samples[$key][$item['dir']] += $item['mode'] === 'bps' ? $values[$itemid] : $values[$itemid] * 8;
+
+		if ($clocks[$itemid] > $samples[$key]['clock']) {
+			$samples[$key]['clock'] = $clocks[$itemid];
+		}
+	}
+
+	$link_state = [];
+
+	foreach ($links as $l) {
+		if ($l['ifa'] === '' && $l['ifb'] === '') {
+			continue;
+		}
+
+		$down_host = false;
+		$down_if = false;
+		$utils = [];
+		$best = null;
+
+		foreach ([['a', 'ifa'], ['b', 'ifb']] as [$end, $ifcol]) {
+			$node = $nodes[$l[$end]] ?? null;
+
+			if ($node === null || $node['type'] !== 'device' || $node['hostid'] === null
+					|| $l[$ifcol] === '') {
+				continue;
+			}
+
+			$hid = $node['hostid'];
+
+			if (($avail[$hid] ?? 2) === 0) {
+				$down_host = true;
+			}
+
+			$key = $hid.'|'.$l[$ifcol];
+
+			if (($status[$key] ?? 1) === 0) {
+				$down_if = true;
+			}
+
+			if (isset($samples[$key])) {
+				$s = $samples[$key];
+
+				// the busiest end drives the displayed in/out rates
+				if ($best === null || $s['in'] + $s['out'] > $best['in'] + $best['out']) {
+					$best = $s;
+				}
+
+				if ($l['mbps'] > 0) {
+					$utils[] = ($now - $s['clock']) > TOPO_UTIL_STALE_SECS
+						? null
+						: max($s['in'], $s['out']) / ($l['mbps'] * 1000000) * 100;
+				}
+			}
+		}
+
+		$utils = array_filter($utils, static function ($u): bool {
+			return $u !== null;
+		});
+
+		$link_state[$l['linkid']] = [
+			'in'   => $best !== null ? (int) round($best['in']) : null,
+			'out'  => $best !== null ? (int) round($best['out']) : null,
+			'util' => $utils ? (int) round(max($utils)) : null,
+			'down' => $down_host || $down_if
+		];
+	}
+
+	return ['links' => $link_state, 'avail' => $avail];
+}
+
+/**
+ * Parse a net.if.* item key: 'net.if.in["eth0","bytes"]' →
+ * ['dir' => 'in', 'if' => 'eth0', 'mode' => 'bytes']. Returns null when the
+ * key is not a net.if.* key or carries no parsable interface name.
+ */
+function topoIfKeyParse(string $key_): ?array {
+	$dirs = ['in', 'out', 'status'];
+
+	foreach ($dirs as $dir) {
+		if (!str_starts_with($key_, 'net.if.'.$dir.'[')) {
+			continue;
+		}
+
+		$l = strpos($key_, '[');
+		$r = strrpos($key_, ']');
+
+		if ($l === false || $r === false || $r < $l) {
+			return null;
+		}
+
+		$spec = substr($key_, $l + 1, $r - $l - 1);
+		$comma = strpos($spec, ',');
+		$ifname = trim($comma === false ? $spec : substr($spec, 0, $comma), '"\' ');
+		$mode = $comma === false ? '' : strtolower(trim(substr($spec, $comma + 1), '"\' '));
+
+		return $ifname === '' ? null : ['dir' => $dir, 'if' => $ifname, 'mode' => $mode];
+	}
+
+	return null;
+}
+
 /**
  * Interface details for one host: Zabbix interface IPs plus the latest
  * net.if.in / net.if.out value per discovered interface (loopback excluded).
@@ -287,30 +543,20 @@ function topoIfaces(int $hostid): array {
 			' AND (key_ LIKE \'net.if.in[%\' OR key_ LIKE \'net.if.out[%\')');
 
 	while ($row = DBfetch($res)) {
-		$l = strpos($row['key_'], '[');
-		$r = strrpos($row['key_'], ']');
+		$k = topoIfKeyParse($row['key_']);
 
-		if ($l === false || $r === false || $r < $l) {
-			continue;
-		}
-
-		$spec = substr($row['key_'], $l + 1, $r - $l - 1);
-		$comma = strpos($spec, ',');
-		$ifname = trim($comma === false ? $spec : substr($spec, 0, $comma), '"\' ');
-		$mode = $comma === false ? '' : strtolower(trim(substr($spec, $comma + 1), '"\' '));
-
-		if ($ifname === '' || $ifname === 'lo') {
+		if ($k === null || ($k['dir'] !== 'in' && $k['dir'] !== 'out') || $k['if'] === 'lo') {
 			continue;
 		}
 
 		// keep plain byte counters only — dropped/errors/packets items are different metrics
-		if ($mode !== '' && $mode !== 'bytes') {
+		if ($k['mode'] !== '' && $k['mode'] !== 'bytes') {
 			continue;
 		}
 
 		$items[(int) $row['itemid']] = [
-			'if'  => $ifname,
-			'dir' => strpos($row['key_'], 'net.if.in') === 0 ? 'in' : 'out',
+			'if'  => $k['if'],
+			'dir' => $k['dir'],
 			'vt'  => (int) $row['value_type']
 		];
 	}
@@ -363,6 +609,45 @@ function topoIfaces(int $hostid): array {
 	});
 
 	return ['ips' => $ips, 'ifaces' => $ifaces];
+}
+
+/**
+ * Whether topo_link carries the live-status binding columns (ifa, ifb, mbps)
+ * — installs that have not run topo_link_status.sql yet keep working, minus
+ * interface bindings.
+ */
+function topoLinkLiveCols(): bool {
+	return (bool) DBfetch(DBselect('SELECT 1 FROM information_schema.columns'.
+			' WHERE table_schema = \'public\' AND table_name = \'topo_link\' AND column_name = \'mbps\''));
+}
+
+/**
+ * Interface names of one host that have net.if.in / net.if.out items — the
+ * choices for the link binding dropdowns in the link editor.
+ */
+function topoIfNames(int $hostid): array {
+	$res = DBselect('SELECT key_ FROM items WHERE hostid = '.$hostid.' AND status = 0'.
+			' AND (key_ LIKE \'net.if.in[%\' OR key_ LIKE \'net.if.out[%\')');
+	$names = [];
+
+	while ($row = DBfetch($res)) {
+		$k = topoIfKeyParse($row['key_']);
+
+		// interfaces without a usable rate item (bytes/bps) are no binding
+		// candidates, and LLD placeholder names ({#IFNAME}) never carry data
+		if ($k === null || $k['if'] === 'lo' || str_starts_with($k['if'], '{#')
+				|| ($k['mode'] !== '' && $k['mode'] !== 'bytes' && $k['mode'] !== 'bps')) {
+			continue;
+		}
+
+		if (!in_array($k['if'], $names)) {
+			$names[] = $k['if'];
+		}
+	}
+
+	sort($names);
+
+	return $names;
 }
 
 /**
@@ -805,16 +1090,20 @@ $ajax = (getRequest('ajax') === '1');
 
 // Read-only status feed for the auto-refresh poller.
 if ($ajax && getRequest('mode') === 'status') {
-	[$nodes] = topoLoad();
+	[$nodes, $links] = topoLoad();
 	$services = topoServices();
 	$node_status = topoStatuses($nodes);
 	session_write_close();
+
+	$link_state = topoLinkState($nodes, $links);
 
 	header('Content-Type: application/json; charset=UTF-8');
 	echo json_encode([
 		'statuses' => $node_status,
 		'traffic' => topoTraffic($nodes),
-		'service_state' => topoServiceState($services, $nodes, $node_status)
+		'service_state' => topoServiceState($services, $nodes, $node_status),
+		'links' => $link_state['links'],
+		'avail' => $link_state['avail']
 	], JSON_UNESCAPED_UNICODE);
 	exit;
 }
@@ -1011,6 +1300,28 @@ if ($ajax && getRequest('mode') === 'problems') {
 	exit;
 }
 
+// Read-only interface names of one device node's host — the choices for the
+// link binding dropdowns in the link editor.
+if ($ajax && getRequest('mode') === 'ifnames') {
+	[$nodes] = topoLoad();
+	session_write_close();
+
+	header('Content-Type: application/json; charset=UTF-8');
+
+	$nodeid = (int) getRequest('nodeid', 0);
+	$node = $nodes[$nodeid] ?? null;
+
+	if ($node === null || $node['type'] !== 'device' || $node['hostid'] === null) {
+		echo json_encode(['ok' => false, 'msg' => _('The selected node was not found.')],
+			JSON_UNESCAPED_UNICODE);
+		exit;
+	}
+
+	echo json_encode(['ok' => true, 'ifnames' => topoIfNames($node['hostid'])],
+		JSON_UNESCAPED_UNICODE);
+	exit;
+}
+
 // Write actions, Super admin only, CSRF protected, JSON answers.
 if ($ajax) {
 	session_write_close();
@@ -1189,16 +1500,44 @@ if ($ajax) {
 		$linkid = (int) getRequest('linkid', 0);
 		$service = trim(getRequest('service', ''));
 		$proto = trim(getRequest('proto', ''));
+		$ifa = trim(getRequest('ifa', ''));
+		$ifb = trim(getRequest('ifb', ''));
+		$mbps = (int) getRequest('mbps', 0);
 
-		if (mb_strlen($service) > 64 || mb_strlen($proto) > 32) {
+		if (mb_strlen($service) > 64 || mb_strlen($proto) > 32 || mb_strlen($ifa) > 64
+				|| mb_strlen($ifb) > 64) {
 			$reply(false, _('Service or protocol text is too long.'));
 		}
 
-		if (!DBfetch(DBselect('SELECT topo_linkid FROM topo_link WHERE topo_linkid = '.$linkid))) {
+		if ($mbps < 0 || $mbps > 1000000) {
+			$reply(false, _('Bandwidth must be between 0 and 1000000 Mbps.'));
+		}
+
+		$row = DBfetch(DBselect('SELECT nodeida, nodeidb FROM topo_link WHERE topo_linkid = '.$linkid));
+
+		if ($row === false) {
 			$reply(false, _('The selected link was not found.'));
 		}
 
+		if (!topoLinkLiveCols()) {
+			$reply(false, _('Interface binding needs the new database columns first — run topo_link_status.sql.'));
+		}
+
+		// a group end (or a device without a host) has nothing to bind — clear that side
+		[$nodes] = topoLoad();
+		$na = $nodes[(int) $row['nodeida']] ?? null;
+		$nb = $nodes[(int) $row['nodeidb']] ?? null;
+
+		if ($na === null || $na['type'] !== 'device' || $na['hostid'] === null) {
+			$ifa = '';
+		}
+
+		if ($nb === null || $nb['type'] !== 'device' || $nb['hostid'] === null) {
+			$ifb = '';
+		}
+
 		if (!DBexecute('UPDATE topo_link SET service = '.zbx_dbstr($service).', proto = '.zbx_dbstr($proto).
+				', ifa = '.zbx_dbstr($ifa).', ifb = '.zbx_dbstr($ifb).', mbps = '.$mbps.
 				' WHERE topo_linkid = '.$linkid)) {
 			$reply(false, _('Database write failed (check the DB user privileges).'));
 		}
@@ -1517,6 +1856,9 @@ foreach ($nodes as $n) {
 
 $csrf_token = CCsrfTokenHelper::get('topo_tree.php');
 
+// the link editor's binding fields render only when the DB columns exist
+$link_live = topoLinkLiveCols();
+
 // UI strings for the client-side script, translated by the user's language.
 $i18n = [
 	'sev_legend' => _('Severity'),
@@ -1576,7 +1918,8 @@ $i18n = [
 	'depends_on' => _('Depends on'),
 	'no_deps' => _('No dependencies.'),
 	'no_services' => _('No services yet.'),
-	'status_lbl' => _('Status')
+	'status_lbl' => _('Status'),
+	'if_not_bound' => _('— Interface not bound —')
 ];
 
 $data = [
@@ -1587,6 +1930,7 @@ $data = [
 	'service_state' => $service_state,
 	'statuses' => $statuses,
 	'traffic' => topoTraffic($nodes),
+	'link_state' => topoLinkState($nodes, $links),
 	'host_names' => $host_names,
 	'is_admin' => $is_admin,
 	'csrf_token' => $csrf_token
@@ -1641,6 +1985,16 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo .live .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
 			box-shadow: 0 0 8px var(--ok); animation: livepulse 2.4s ease-in-out infinite; }
 		@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+		/* live link status legend — shown only once some link carries a binding */
+		.topo .link-legend { display: inline-flex; align-items: center; gap: 12px; font-size: 11.5px;
+			color: var(--text-dim); border: 1px solid var(--line); border-radius: 20px; padding: 5px 12px;
+			background: rgba(16, 26, 46, .6); }
+		.topo .link-legend[hidden] { display: none; }
+		.topo .link-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+		.topo .link-legend .sw { width: 15px; height: 4px; border-radius: 2px; display: inline-block; }
+		.topo .link-legend .sw.is-down { animation: livepulse 1s ease-in-out infinite; }
+		@keyframes linkflash { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: .2; } }
 
 		/* ---- buttons ---- */
 		.topo .tbtn { border: 1px solid transparent; border-radius: 8px; padding: 8px 16px; cursor: pointer;
@@ -1731,6 +2085,7 @@ header('Content-Type: text/html; charset=UTF-8');
 		.topo svg.links .flow-hit { pointer-events: stroke; stroke: transparent; stroke-width: 16;
 			cursor: pointer; }
 		.topo .canvas.is-delmode svg.links .link-hit:hover { stroke: rgba(228, 89, 89, .35); }
+		.topo svg.links line.link-down { animation: linkflash .9s ease-in-out infinite; }
 
 		/* ---- group boxes ---- */
 		.topo .gbox { position: absolute; z-index: 1; border: 1px dashed rgba(63, 162, 255, .38);
@@ -1767,6 +2122,7 @@ header('Content-Type: text/html; charset=UTF-8');
 			box-shadow: 0 0 0 3px var(--accent-soft), 0 0 18px rgba(63, 162, 255, .25); }
 		.topo .node.is-nb { border-color: var(--accent);
 			box-shadow: 0 0 0 2px var(--accent-soft), 0 0 14px rgba(63, 162, 255, .18); }
+		.topo .node.is-down { opacity: .45; }
 		.topo .gbox.is-nb { border-color: rgba(63, 162, 255, .75); }
 		.topo .canvas.is-delmode .node:hover { border-color: var(--danger);
 			box-shadow: 0 0 0 3px rgba(228, 89, 89, .18); }
@@ -1931,7 +2287,8 @@ header('Content-Type: text/html; charset=UTF-8');
 
 		@media (prefers-reduced-motion: reduce) {
 			.topo .live .live-dot, .topo .node .dot.is-alert, .topo .svcrow .dot.is-alert,
-			.topo .svccard .dot.is-alert { animation: none; }
+			.topo .svccard .dot.is-alert, .topo svg.links line.link-down,
+			.topo .link-legend .sw.is-down { animation: none; }
 		}
 	</style>
 </head>
@@ -1951,6 +2308,13 @@ header('Content-Type: text/html; charset=UTF-8');
 		</div>
 		<span class="spacer"></span>
 		<span class="live"><span class="live-dot"></span><?= _('LIVE') ?> <span class="mono" id="live-time"></span></span>
+		<span class="link-legend" id="link-legend" hidden>
+			<span><span class="sw" style="background: #38d17e"></span><?= _('Link OK') ?></span>
+			<span><span class="sw" style="background: #FFC859"></span>60–80%</span>
+			<span><span class="sw" style="background: #FFA059"></span>80–95%</span>
+			<span><span class="sw" style="background: #E45959"></span>&gt;95%</span>
+			<span><span class="sw is-down" style="background: #E45959"></span><?= _('Link down') ?></span>
+		</span>
 <?php if ($is_admin): ?>
 		<button type="button" class="tbtn" id="btn-add-group"><?= _('+ Group') ?></button>
 		<button type="button" class="tbtn" id="btn-add-device"><?= _('+ Device') ?></button>
@@ -2041,6 +2405,14 @@ header('Content-Type: text/html; charset=UTF-8');
 			<input type="text" id="link-service" maxlength="64" placeholder="<?= _('e.g. HTTPS, SQL replication') ?>">
 			<label for="link-proto"><?= _('Protocol') ?></label>
 			<input type="text" id="link-proto" maxlength="32" placeholder="<?= _('e.g. TCP/443, UDP/161') ?>">
+<?php if ($link_live): ?>
+			<label for="link-ifa"><?= _('Interface at source end') ?></label>
+			<select id="link-ifa"><option value=""><?= _('— Interface not bound —') ?></option></select>
+			<label for="link-ifb"><?= _('Interface at destination end') ?></label>
+			<select id="link-ifb"><option value=""><?= _('— Interface not bound —') ?></option></select>
+			<label for="link-mbps"><?= _('Link bandwidth (Mbps, 0 = unknown)') ?></label>
+			<input type="number" id="link-mbps" min="0" max="1000000" step="1" value="0">
+<?php endif ?>
 			<div class="tmodal-btns">
 				<button type="button" class="tbtn tbtn-ghost" id="btn-cancel-link"><?= _('Cancel') ?></button>
 				<button type="button" class="tbtn" id="btn-save-link"><?= _('Save') ?></button>
@@ -2132,6 +2504,10 @@ const SEV = [
 const OK_COLOR = '#38d17e';
 const NODE_W = 170, NODE_H = 68, CHIP_W = 130, CHIP_H = 40;
 const MOTION = matchMedia('(prefers-reduced-motion: no-preference)').matches;
+// live link status: utilization tiers in % (the topbar legend uses the same
+// colours) and the down colour; data itself comes from the server status feed
+const UTIL_TIERS = [[60, '#FFC859'], [80, '#FFA059'], [95, '#E45959']];
+const DOWN_COLOR = '#E45959';
 
 const canvas = document.getElementById('canvas');
 const svg = document.getElementById('svg');
@@ -2139,6 +2515,10 @@ const viewport = document.getElementById('viewport');
 const nodes = new Map(DATA.nodes.map(n => [n.nodeid, n]));
 const statuses = new Map(Object.entries(DATA.statuses).map(([k, v]) => [+k, v]));
 const traffic = new Map(Object.entries(DATA.traffic || {}).map(([k, v]) => [+k, v]));
+// live link state (utilization / down) and host availability from the server's
+// status feed; only links with a binding appear in linkState
+const linkState = new Map(Object.entries(DATA.link_state?.links || {}).map(([k, v]) => [+k, v]));
+const hostAvail = new Map(Object.entries(DATA.link_state?.avail || {}).map(([k, v]) => [+k, v]));
 // named one-way paths over the map; color index follows the load order and
 // stays stable while toggling/deleting other flows in place
 const FLOW_COLORS = ['#4dd0e1', '#b388ff', '#ffb74d', '#f06292', '#aed581', '#9575cd', '#4fc3f7', '#ffd54f'];
@@ -2422,6 +2802,21 @@ function makeGroupBox(g) {
 function linkColor(l) {
 	const sa = statuses.get(l.a), sb = statuses.get(l.b);
 	const sev = Math.max(sa ? sa.sev : -1, sb ? sb.sev : -1);
+
+	// a down link is flashed red in drawLinks via linkState; tier colours are
+	// picked there too — this only maps severity
+	const st = linkState.get(l.linkid);
+
+	if (st && st.down) {
+		return {color: DOWN_COLOR, sev};
+	}
+
+	if (st && st.util !== null) {
+		for (const [min, tierColor] of UTIL_TIERS) {
+			if (st.util >= min) return {color: tierColor, sev};
+		}
+	}
+
 	return {color: sevColor(sev), sev};
 }
 
@@ -2435,8 +2830,11 @@ function drawLinks(boxes) {
 		if (!a || !b) continue;
 
 		const p1 = anchorOf(a, boxes), p2 = anchorOf(b, boxes);
+		const st = linkState.get(l.linkid);
+		const down = !!(st && st.down);
+		const util = st && st.util !== null ? st.util : 0;
 		const {color, sev} = linkColor(l);
-		const w = sev >= 4 ? 3.5 : sev >= 2 ? 2.5 : 1.8;
+		const w = down ? 4 : sev >= 4 ? 3.5 : sev >= 2 ? 2.5 : 1.8;
 		const len = Math.hypot(p2.x - p1.x, p2.y - p1.y);
 
 		// when a device is selected (or a service focuses a set of nodes) its own
@@ -2451,11 +2849,14 @@ function drawLinks(boxes) {
 		// soft under-glow, then the line itself, then packets moving both ways
 		html += '<line x1="'+p1.x+'" y1="'+p1.y+'" x2="'+p2.x+'" y2="'+p2.y+'" stroke="'+color+
 			'" stroke-width="'+(lw + 6)+'" opacity="'+glow+'"/>' +
-			'<line x1="'+p1.x+'" y1="'+p1.y+'" x2="'+p2.x+'" y2="'+p2.y+'" stroke="'+color+
+			'<line class="link-line'+(down ? ' link-down' : '')+'" x1="'+p1.x+'" y1="'+p1.y+
+			'" x2="'+p2.x+'" y2="'+p2.y+'" stroke="'+color+
 			'" stroke-width="'+lw+'" opacity="'+alpha+'"/>';
 
-		if (MOTION && len > 60 && (selectedId === null || mine)) {
-			const dur = Math.max(2.2, len / 150).toFixed(2);
+		// packets stream faster on busier links; none run over a dead one
+		if (MOTION && len > 60 && !down && (selectedId === null || mine)) {
+			const boost = util >= 95 ? .45 : util >= 80 ? .6 : util >= 60 ? .75 : 1;
+			const dur = Math.max(1.4, len / 150 * boost).toFixed(2);
 
 			html += '<circle r="2.4" fill="'+color+'" opacity=".9">' +
 				'<animateMotion dur="'+dur+'s" repeatCount="indefinite" path="M'+p1.x+' '+p1.y+
@@ -2465,9 +2866,13 @@ function drawLinks(boxes) {
 				' path="M'+p1.x+' '+p1.y+' L'+p2.x+' '+p2.y+'"/></circle>';
 		}
 
-		// service / protocol tag: manual notes first, otherwise how Zabbix reaches the
-		// peer — auto ones appear on the selected device's links, manual ones always show
+		// service / protocol tag: manual notes first, then live utilization on
+		// bound links; auto monsrv only when there is nothing else to show
 		let tag = [l.service, l.proto].filter(Boolean).join(' · ');
+
+		if (st && st.util !== null) {
+			tag = (tag ? tag + ' · ' : '') + Math.round(st.util) + '%';
+		}
 
 		if (!tag && selectedId !== null && (l.a === selectedId || l.b === selectedId)) {
 			const peer = nodeById(l.a === selectedId ? l.b : l.a);
@@ -2541,15 +2946,22 @@ function applyStatuses() {
 		const st = statuses.get(n.nodeid) || {sev: -1, cnt: 0};
 		const el = n.type === 'device' ? nodeEls.get(n.nodeid) : gboxEls[n.nodeid];
 		const dot = el ? el.querySelector('.dot') : null;
+		// a bound host whose agent/SNMP interfaces are all unavailable: red
+		// pulsing dot + faded card (unbound nodes are never down)
+		const down = n.type === 'device' && n.hostid !== null && hostAvail.get(n.hostid) === 0;
 
 		if (dot) {
-			dot.style.background = sevColor(st.sev);
-			dot.style.boxShadow = '0 0 8px ' + sevColor(st.sev) + '99';
-			dot.classList.toggle('is-alert', st.sev >= 2);
+			dot.style.background = down ? DOWN_COLOR : sevColor(st.sev);
+			dot.style.boxShadow = '0 0 8px ' + (down ? DOWN_COLOR : sevColor(st.sev)) + '99';
+			dot.classList.toggle('is-alert', down || st.sev >= 2);
 		}
 
-		if (el && n.type === 'group') {
-			el.style.borderColor = st.sev >= 4 ? sevColor(st.sev) : '';
+		if (el) {
+			el.classList.toggle('is-down', down);
+
+			if (n.type === 'group') {
+				el.style.borderColor = st.sev >= 4 ? sevColor(st.sev) : '';
+			}
 		}
 
 		let badge = el ? el.querySelector('.n-badge') : null;
@@ -2572,6 +2984,17 @@ function applyStatuses() {
 }
 
 applyStatuses();
+
+// the link legend is meaningful only once some link carries a binding
+function updateLinkLegend() {
+	const legend = document.getElementById('link-legend');
+
+	if (legend) {
+		legend.hidden = !DATA.links.some(l => linkState.has(l.linkid));
+	}
+}
+
+updateLinkLegend();
 
 function applyTraffic() {
 	for (const n of nodes.values()) {
@@ -2885,10 +3308,61 @@ document.getElementById('modal-settings')?.addEventListener('click', e => {
 
 let linkEditId = null;
 
+// fill one binding dropdown with the end host's interface names (async lookup);
+// a slow reply for a since-closed modal is dropped, and a binding whose
+// interface has no rate items anymore stays selectable
+async function fillIfSelect(sel, nodeid, value, lid) {
+	sel.innerHTML = '';
+	sel.appendChild(new Option(T.if_not_bound, ''));
+	sel.disabled = true;
+
+	const node = nodes.get(nodeid);
+
+	if (!node || node.type !== 'device' || node.hostid === null) {
+		return;
+	}
+
+	try {
+		const res = await fetch('topo_tree.php?' +
+			new URLSearchParams({ajax: '1', mode: 'ifnames', nodeid: nodeid}));
+		const json = await res.json();
+
+		if (linkEditId !== lid) return;
+
+		if (json && json.ok) {
+			for (const name of json.ifnames) {
+				sel.appendChild(new Option(name, name));
+			}
+		}
+	}
+	catch (e) {
+		// keep the placeholder-only dropdown on failure
+	}
+
+	sel.disabled = false;
+
+	if (value) {
+		sel.value = value;
+
+		if (sel.value !== value) {
+			sel.appendChild(new Option(value, value, true, true));
+		}
+	}
+}
+
 function openLinkEditor(l) {
 	linkEditId = l.linkid;
 	document.getElementById('link-service').value = l.service || '';
 	document.getElementById('link-proto').value = l.proto || '';
+
+	const selA = document.getElementById('link-ifa');
+
+	if (selA) {
+		document.getElementById('link-mbps').value = l.mbps || 0;
+		fillIfSelect(selA, l.a, l.ifa, linkEditId);
+		fillIfSelect(document.getElementById('link-ifb'), l.b, l.ifb, linkEditId);
+	}
+
 	document.getElementById('modal-link').classList.add('is-on');
 	document.getElementById('link-service').focus();
 }
@@ -2899,11 +3373,21 @@ function closeLinkEditor() {
 }
 
 document.getElementById('btn-save-link')?.addEventListener('click', async () => {
-	const r = await post({
+	const payload = {
 		mode: 'update_link', linkid: linkEditId,
 		service: document.getElementById('link-service').value.trim(),
 		proto: document.getElementById('link-proto').value.trim()
-	});
+	};
+
+	const selA = document.getElementById('link-ifa');
+
+	if (selA) {
+		payload.ifa = selA.value;
+		payload.ifb = document.getElementById('link-ifb').value;
+		payload.mbps = Math.max(0, parseInt(document.getElementById('link-mbps').value, 10) || 0);
+	}
+
+	const r = await post(payload);
 
 	if (r && r.ok) location.reload();
 	if (r && !r.ok) toast(r.msg);
@@ -4191,6 +4675,22 @@ setInterval(async () => {
 				}
 			}
 
+			if (json.links) {
+				linkState.clear();
+
+				for (const [k, v] of Object.entries(json.links)) {
+					linkState.set(+k, v);
+				}
+			}
+
+			if (json.avail) {
+				hostAvail.clear();
+
+				for (const [k, v] of Object.entries(json.avail)) {
+					hostAvail.set(+k, v);
+				}
+			}
+
 			if (json.service_state) {
 				svcState.clear();
 
@@ -4213,6 +4713,7 @@ setInterval(async () => {
 			updateGeometry();
 			applyStatuses();
 			applyTraffic();
+			updateLinkLegend();
 			document.getElementById('live-time').textContent =
 				new Date().toLocaleTimeString('th-TH', {hour12: false});
 		}
